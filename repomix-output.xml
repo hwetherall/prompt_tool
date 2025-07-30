@@ -1,0 +1,3665 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+.gitignore
+app/api/generate/route.ts
+app/api/prompts/[id]/route.ts
+app/api/prompts/route.ts
+app/api/render/route.ts
+app/api/similarity/route.ts
+app/api/snippets/[name]/route.ts
+app/api/snippets/route.ts
+app/globals.css
+app/layout.tsx
+app/page.tsx
+app/prompts/[id]/page.tsx
+app/prompts/new/page.tsx
+app/prompts/page.tsx
+app/snippets/[name]/page.tsx
+app/snippets/new/page.tsx
+app/snippets/page.tsx
+components/GenerationProgress.tsx
+components/PromptComposer.tsx
+components/SearchBar.tsx
+components/SnippetCard.tsx
+components/SnippetEditor.tsx
+components/SnippetHierarchy.tsx
+components/ui/Button.tsx
+components/ui/Card.tsx
+components/ui/Input.tsx
+components/ui/LoadingSpinner.tsx
+components/ui/Textarea.tsx
+lib/openrouter.ts
+lib/similarity.ts
+lib/snippet-utils.ts
+lib/supabase.ts
+lib/types.ts
+next.config.js
+package.json
+postcss.config.js
+supabase.sql
+tailwind.config.js
+tsconfig.json
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".gitignore">
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files
+.env*.local
+.env
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+</file>
+
+<file path="app/api/generate/route.ts">
+import { NextRequest, NextResponse } from 'next/server';
+import { generateSnippetWithMultipleLLMs } from '@/lib/openrouter';
+import { createGenerationSession, updateGenerationSession } from '@/lib/supabase';
+import type { Snippet } from '@/lib/types';
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { snippetName, context, similarSnippets } = body;
+    
+    if (!snippetName || !context) {
+      return NextResponse.json(
+        { error: 'Snippet name and context are required' },
+        { status: 400 }
+      );
+    }
+    
+    // Create a generation session
+    const session = await createGenerationSession({
+      snippet_name: snippetName,
+      user_context: context,
+      similar_snippets: similarSnippets.map((s: Snippet) => s.name),
+      status: 'in_progress'
+    });
+    
+    // Start generation process
+    const { responses, finalContent } = await generateSnippetWithMultipleLLMs(
+      {
+        context,
+        snippetName,
+        similarSnippets
+      },
+      (step, progress) => {
+        // You could use Server-Sent Events here for real-time updates
+        console.log(`${step}: ${progress}%`);
+      }
+    );
+    
+    // Update session with results
+    const updatedSession = await updateGenerationSession(session.id, {
+      llm_responses: {
+        claude: responses['Claude 3 Opus'],
+        gpt: responses['GPT-4 Turbo'],
+        grok: responses['Grok Beta']
+      },
+      final_combined: finalContent,
+      status: 'completed'
+    });
+    
+    return NextResponse.json({
+      sessionId: updatedSession.id,
+      finalContent,
+      responses
+    });
+  } catch (error: any) {
+    console.error('Error generating snippet:', error);
+    
+    return NextResponse.json(
+      { error: error.message || 'Failed to generate snippet' },
+      { status: 500 }
+    );
+  }
+}
+</file>
+
+<file path="app/api/prompts/[id]/route.ts">
+import { NextRequest, NextResponse } from 'next/server';
+import { getComposedPrompt, updateComposedPrompt, deleteComposedPrompt } from '@/lib/supabase';
+
+interface RouteParams {
+  params: {
+    id: string;
+  };
+}
+
+export async function GET(request: NextRequest, { params }: RouteParams) {
+  try {
+    const prompt = await getComposedPrompt(params.id);
+    return NextResponse.json({ prompt });
+  } catch (error: any) {
+    console.error('Error fetching prompt:', error);
+    
+    if (error.message?.includes('No rows')) {
+      return NextResponse.json(
+        { error: 'Prompt not found' },
+        { status: 404 }
+      );
+    }
+    
+    return NextResponse.json(
+      { error: 'Failed to fetch prompt' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(request: NextRequest, { params }: RouteParams) {
+  try {
+    const body = await request.json();
+    const prompt = await updateComposedPrompt(params.id, body);
+    
+    return NextResponse.json({ prompt });
+  } catch (error: any) {
+    console.error('Error updating prompt:', error);
+    
+    if (error.message?.includes('No rows')) {
+      return NextResponse.json(
+        { error: 'Prompt not found' },
+        { status: 404 }
+      );
+    }
+    
+    return NextResponse.json(
+      { error: 'Failed to update prompt' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  try {
+    await deleteComposedPrompt(params.id);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting prompt:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete prompt' },
+      { status: 500 }
+    );
+  }
+}
+</file>
+
+<file path="app/api/prompts/route.ts">
+import { NextRequest, NextResponse } from 'next/server';
+import { getComposedPrompts, createComposedPrompt } from '@/lib/supabase';
+
+export async function GET() {
+  try {
+    const prompts = await getComposedPrompts();
+    return NextResponse.json({ prompts });
+  } catch (error) {
+    console.error('Error fetching prompts:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch prompts' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { name, template, rendered_content, used_snippets } = body;
+    
+    if (!name || !template) {
+      return NextResponse.json(
+        { error: 'Name and template are required' },
+        { status: 400 }
+      );
+    }
+    
+    const prompt = await createComposedPrompt({
+      name,
+      template,
+      rendered_content,
+      used_snippets
+    });
+    
+    return NextResponse.json({ prompt }, { status: 201 });
+  } catch (error) {
+    console.error('Error creating prompt:', error);
+    return NextResponse.json(
+      { error: 'Failed to create prompt' },
+      { status: 500 }
+    );
+  }
+}
+</file>
+
+<file path="app/api/render/route.ts">
+import { NextRequest, NextResponse } from 'next/server';
+import { renderTemplate, validateTemplate } from '@/lib/snippet-utils';
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { template } = body;
+    
+    if (!template) {
+      return NextResponse.json(
+        { error: 'Template is required' },
+        { status: 400 }
+      );
+    }
+    
+    // Validate template syntax
+    const validation = validateTemplate(template);
+    if (!validation.valid) {
+      return NextResponse.json(
+        { error: 'Invalid template', errors: validation.errors },
+        { status: 400 }
+      );
+    }
+    
+    // Render the template
+    const result = await renderTemplate(template);
+    
+    if (result.errors.length > 0 && result.rendered === template) {
+      // If there are errors and nothing was rendered, return error
+      return NextResponse.json(
+        { error: 'Failed to render template', errors: result.errors },
+        { status: 400 }
+      );
+    }
+    
+    return NextResponse.json({
+      rendered: result.rendered,
+      usedSnippets: result.usedSnippets,
+      errors: result.errors
+    });
+  } catch (error) {
+    console.error('Error rendering template:', error);
+    return NextResponse.json(
+      { error: 'Failed to render template' },
+      { status: 500 }
+    );
+  }
+}
+</file>
+
+<file path="app/api/similarity/route.ts">
+import { NextRequest, NextResponse } from 'next/server';
+import { getSnippets } from '@/lib/supabase';
+import { findSimilarSnippets } from '@/lib/similarity';
+
+export async function GET(request: NextRequest) {
+  try {
+    const searchParams = request.nextUrl.searchParams;
+    const name = searchParams.get('name');
+    const limit = searchParams.get('limit');
+    
+    if (!name) {
+      return NextResponse.json(
+        { error: 'Name parameter is required' },
+        { status: 400 }
+      );
+    }
+    
+    const allSnippets = await getSnippets();
+    const similarSnippets = findSimilarSnippets(
+      name,
+      allSnippets,
+      limit ? parseInt(limit, 10) : 5
+    );
+    
+    return NextResponse.json({ similarSnippets });
+  } catch (error) {
+    console.error('Error finding similar snippets:', error);
+    return NextResponse.json(
+      { error: 'Failed to find similar snippets' },
+      { status: 500 }
+    );
+  }
+}
+</file>
+
+<file path="app/api/snippets/[name]/route.ts">
+import { NextRequest, NextResponse } from 'next/server';
+import { getSnippet, updateSnippet, deleteSnippet } from '@/lib/supabase';
+
+interface RouteParams {
+  params: {
+    name: string;
+  };
+}
+
+export async function GET(request: NextRequest, { params }: RouteParams) {
+  try {
+    const snippet = await getSnippet(params.name);
+    return NextResponse.json({ snippet });
+  } catch (error: any) {
+    console.error('Error fetching snippet:', error);
+    
+    if (error.message?.includes('No rows')) {
+      return NextResponse.json(
+        { error: 'Snippet not found' },
+        { status: 404 }
+      );
+    }
+    
+    return NextResponse.json(
+      { error: 'Failed to fetch snippet' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(request: NextRequest, { params }: RouteParams) {
+  try {
+    const body = await request.json();
+    const { content, description } = body;
+    
+    const snippet = await updateSnippet(params.name, {
+      content,
+      description
+    });
+    
+    return NextResponse.json({ snippet });
+  } catch (error: any) {
+    console.error('Error updating snippet:', error);
+    
+    if (error.message?.includes('No rows')) {
+      return NextResponse.json(
+        { error: 'Snippet not found' },
+        { status: 404 }
+      );
+    }
+    
+    return NextResponse.json(
+      { error: 'Failed to update snippet' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  try {
+    await deleteSnippet(params.name);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting snippet:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete snippet' },
+      { status: 500 }
+    );
+  }
+}
+</file>
+
+<file path="app/api/snippets/route.ts">
+import { NextRequest, NextResponse } from 'next/server';
+import { getSnippets, createSnippet } from '@/lib/supabase';
+
+export async function GET(request: NextRequest) {
+  try {
+    const searchParams = request.nextUrl.searchParams;
+    const search = searchParams.get('search') || undefined;
+    
+    const snippets = await getSnippets(search);
+    
+    return NextResponse.json({ snippets });
+  } catch (error) {
+    console.error('Error fetching snippets:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch snippets' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { name, content, description } = body;
+    
+    if (!name || !content) {
+      return NextResponse.json(
+        { error: 'Name and content are required' },
+        { status: 400 }
+      );
+    }
+    
+    const snippet = await createSnippet({
+      name,
+      content,
+      description
+    });
+    
+    return NextResponse.json({ snippet }, { status: 201 });
+  } catch (error: any) {
+    console.error('Error creating snippet:', error);
+    
+    if (error.message?.includes('duplicate key')) {
+      return NextResponse.json(
+        { error: 'A snippet with this name already exists' },
+        { status: 409 }
+      );
+    }
+    
+    return NextResponse.json(
+      { error: 'Failed to create snippet' },
+      { status: 500 }
+    );
+  }
+}
+</file>
+
+<file path="app/globals.css">
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-primary: 0 112 243;
+    --color-secondary: 0 81 204;
+  }
+  
+  body {
+    @apply bg-gray-50 text-gray-900;
+  }
+  
+  h1 {
+    @apply text-3xl font-bold;
+  }
+  
+  h2 {
+    @apply text-2xl font-semibold;
+  }
+  
+  h3 {
+    @apply text-xl font-semibold;
+  }
+  
+  h4 {
+    @apply text-lg font-medium;
+  }
+}
+
+@layer components {
+  .container {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+  
+  .snippet-name {
+    @apply font-mono text-sm bg-gray-100 px-2 py-1 rounded;
+  }
+  
+  .hierarchy-path {
+    @apply text-sm text-gray-600;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400;
+}
+</file>
+
+<file path="app/layout.tsx">
+import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
+import './globals.css';
+import Link from 'next/link';
+
+const inter = Inter({ subsets: ['latin'] });
+
+export const metadata: Metadata = {
+  title: 'Prompt Builder',
+  description: 'Create and compose AI prompt snippets',
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en">
+      <body className={inter.className}>
+        <nav className="bg-white shadow-sm border-b">
+          <div className="container">
+            <div className="flex justify-between items-center h-16">
+              <div className="flex items-center space-x-8">
+                <Link href="/" className="text-xl font-bold text-primary">
+                  Prompt Builder
+                </Link>
+                <div className="flex items-center space-x-6">
+                  <Link
+                    href="/snippets"
+                    className="text-gray-700 hover:text-primary transition-colors"
+                  >
+                    Snippets
+                  </Link>
+                  <Link
+                    href="/prompts"
+                    className="text-gray-700 hover:text-primary transition-colors"
+                  >
+                    Prompts
+                  </Link>
+                </div>
+              </div>
+              <div className="flex items-center space-x-4">
+                <Link
+                  href="/snippets/new"
+                  className="px-4 py-2 bg-primary text-white rounded-md hover:bg-secondary transition-colors"
+                >
+                  New Snippet
+                </Link>
+                <Link
+                  href="/prompts/new"
+                  className="px-4 py-2 border border-gray-300 rounded-md hover:border-gray-400 transition-colors"
+                >
+                  New Prompt
+                </Link>
+              </div>
+            </div>
+          </div>
+        </nav>
+        <main className="min-h-screen">
+          {children}
+        </main>
+        <footer className="bg-gray-100 border-t mt-auto">
+          <div className="container py-8">
+            <p className="text-center text-gray-600 text-sm">
+              © {new Date().getFullYear()} Prompt Builder. Built for collaborative prompt engineering.
+            </p>
+          </div>
+        </footer>
+      </body>
+    </html>
+  );
+}
+</file>
+
+<file path="app/page.tsx">
+import Link from 'next/link';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+
+export default function HomePage() {
+  return (
+    <div className="container py-12">
+      <div className="max-w-4xl mx-auto text-center mb-12">
+        <h1 className="text-5xl font-bold mb-4">
+          Build Better Prompts Together
+        </h1>
+        <p className="text-xl text-gray-600 mb-8">
+          Create, organize, and compose reusable AI prompt snippets with hierarchical structure and multi-LLM generation.
+        </p>
+        <div className="flex gap-4 justify-center">
+          <Link href="/snippets/new">
+            <Button size="lg">Create Your First Snippet</Button>
+          </Link>
+          <Link href="/snippets">
+            <Button variant="secondary" size="lg">Browse Snippets</Button>
+          </Link>
+        </div>
+      </div>
+
+      <div className="grid md:grid-cols-3 gap-8 mt-16">
+        <Card>
+          <div className="text-center">
+            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+              </svg>
+            </div>
+            <h3 className="mb-2">Hierarchical Organization</h3>
+            <p className="text-gray-600">
+              Organize snippets with intuitive naming like <span className="snippet-name">geo_asia_japan</span> for easy discovery
+            </p>
+          </div>
+        </Card>
+
+        <Card>
+          <div className="text-center">
+            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+              </svg>
+            </div>
+            <h3 className="mb-2">Multi-LLM Generation</h3>
+            <p className="text-gray-600">
+              Generate snippets using Claude, GPT-4, and Grok, then combine for best results
+            </p>
+          </div>
+        </Card>
+
+        <Card>
+          <div className="text-center">
+            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" />
+              </svg>
+            </div>
+            <h3 className="mb-2">Composable Prompts</h3>
+            <p className="text-gray-600">
+              Build complex prompts using <span className="snippet-name">{`{{snippet_name}}`}</span> syntax for reusability
+            </p>
+          </div>
+        </Card>
+      </div>
+
+      <div className="mt-16 bg-gray-100 rounded-lg p-8">
+        <h2 className="text-2xl font-bold mb-4 text-center">How It Works</h2>
+        <div className="max-w-3xl mx-auto space-y-4">
+          <div className="flex items-start gap-4">
+            <div className="flex-shrink-0 w-8 h-8 bg-primary text-white rounded-full flex items-center justify-center font-bold">1</div>
+            <div>
+              <h4 className="font-semibold mb-1">Create a Snippet</h4>
+              <p className="text-gray-600">Name your snippet hierarchically (e.g., <span className="snippet-name">investment_SeriesB</span>) and provide context</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-4">
+            <div className="flex-shrink-0 w-8 h-8 bg-primary text-white rounded-full flex items-center justify-center font-bold">2</div>
+            <div>
+              <h4 className="font-semibold mb-1">AI-Powered Generation</h4>
+              <p className="text-gray-600">System finds similar snippets and generates content using multiple LLMs</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-4">
+            <div className="flex-shrink-0 w-8 h-8 bg-primary text-white rounded-full flex items-center justify-center font-bold">3</div>
+            <div>
+              <h4 className="font-semibold mb-1">Compose & Use</h4>
+              <p className="text-gray-600">Reference snippets in prompts: "Analyze this <span className="snippet-name">{`{{investment_SeriesB}}`}</span> in <span className="snippet-name">{`{{geo_asia_japan}}`}</span>"</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="app/prompts/[id]/page.tsx">
+'use client';
+
+import React, { useEffect, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import type { ComposedPrompt } from '@/lib/types';
+
+export default function PromptDetailPage() {
+  const params = useParams();
+  const router = useRouter();
+  const id = params.id as string;
+  const [prompt, setPrompt] = useState<ComposedPrompt | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  useEffect(() => {
+    if (id) {
+      fetchPrompt();
+    }
+  }, [id]);
+
+  const fetchPrompt = async () => {
+    try {
+      const response = await fetch(`/api/prompts/${id}`);
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('Prompt not found');
+        }
+        throw new Error('Failed to fetch prompt');
+      }
+      
+      const data = await response.json();
+      setPrompt(data.prompt);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/prompts/${id}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete prompt');
+      }
+
+      router.push('/prompts');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete prompt');
+      setShowDeleteConfirm(false);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      // You could add a toast notification here
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="container py-12">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
+  if (error || !prompt) {
+    return (
+      <div className="container py-12">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold mb-4">Prompt Not Found</h1>
+          <p className="text-gray-600 mb-6">{error || 'The requested prompt could not be found.'}</p>
+          <Link href="/prompts">
+            <Button>Back to Prompts</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container py-12 max-w-6xl">
+      <div className="mb-6 flex items-center justify-between">
+        <Link href="/prompts">
+          <Button variant="ghost" size="sm">
+            ← Back to Prompts
+          </Button>
+        </Link>
+        <Button
+          variant="danger"
+          size="sm"
+          onClick={() => setShowDeleteConfirm(true)}
+        >
+          Delete Prompt
+        </Button>
+      </div>
+
+      <div className="space-y-6">
+        <Card>
+          <h1 className="text-2xl font-bold mb-2">{prompt.name}</h1>
+          <p className="text-sm text-gray-500">
+            Created: {new Date(prompt.created_at).toLocaleDateString()} | 
+            Updated: {new Date(prompt.updated_at).toLocaleDateString()}
+          </p>
+        </Card>
+
+        <Card>
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Template</h2>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => copyToClipboard(prompt.template)}
+            >
+              Copy Template
+            </Button>
+          </div>
+          <div className="bg-gray-50 p-4 rounded-md">
+            <pre className="whitespace-pre-wrap font-mono text-sm">{prompt.template}</pre>
+          </div>
+        </Card>
+
+        {prompt.rendered_content && (
+          <Card>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-xl font-semibold">Rendered Output</h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => copyToClipboard(prompt.rendered_content!)}
+              >
+                Copy Output
+              </Button>
+            </div>
+            <div className="bg-gray-50 p-4 rounded-md">
+              <pre className="whitespace-pre-wrap font-mono text-sm">{prompt.rendered_content}</pre>
+            </div>
+          </Card>
+        )}
+
+        {prompt.used_snippets.length > 0 && (
+          <Card>
+            <h2 className="text-xl font-semibold mb-4">Used Snippets</h2>
+            <div className="grid md:grid-cols-2 gap-3">
+              {prompt.used_snippets.map(snippetName => (
+                <Link
+                  key={snippetName}
+                  href={`/snippets/${encodeURIComponent(snippetName)}`}
+                >
+                  <div className="p-3 border rounded-md hover:border-primary transition-colors cursor-pointer">
+                    <span className="font-mono text-sm">{snippetName}</span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </Card>
+        )}
+      </div>
+
+      {showDeleteConfirm && (
+        <Card className="mt-6 border-red-200 bg-red-50">
+          <h3 className="font-semibold text-red-900 mb-2">Confirm Deletion</h3>
+          <p className="text-red-700 mb-4">
+            Are you sure you want to delete "{prompt.name}"? This action cannot be undone.
+          </p>
+          <div className="flex gap-3">
+            <Button
+              variant="danger"
+              onClick={handleDelete}
+              disabled={deleting}
+              isLoading={deleting}
+            >
+              Yes, Delete
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => setShowDeleteConfirm(false)}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {error && (
+        <div className="mt-6 bg-red-50 border border-red-200 rounded-md p-4">
+          <p className="text-red-600">{error}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+</file>
+
+<file path="app/prompts/new/page.tsx">
+'use client';
+
+import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Input } from '@/components/ui/Input';
+import { Card } from '@/components/ui/Card';
+import { PromptComposer } from '@/components/PromptComposer';
+
+export default function NewPromptPage() {
+  const router = useRouter();
+  const [name, setName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSave = async (template: string, rendered: string, usedSnippets: string[]) => {
+    if (!name) {
+      setError('Please provide a name for the prompt');
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/prompts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          template,
+          rendered_content: rendered,
+          used_snippets: usedSnippets
+        })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to save prompt');
+      }
+
+      const data = await response.json();
+      router.push(`/prompts/${data.prompt.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save prompt');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="container py-12 max-w-6xl">
+      <h1 className="mb-8">Create New Prompt</h1>
+
+      <div className="space-y-6">
+        <Card>
+          <h2 className="mb-4">Prompt Details</h2>
+          
+          <Input
+            label="Prompt Name"
+            placeholder="Enter a descriptive name for this prompt"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            fullWidth
+          />
+        </Card>
+
+        <PromptComposer onSave={handleSave} />
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-md p-4">
+            <p className="text-red-600">{error}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="app/prompts/page.tsx">
+'use client';
+
+import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import type { ComposedPrompt } from '@/lib/types';
+
+export default function PromptsPage() {
+  const [prompts, setPrompts] = useState<ComposedPrompt[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchPrompts();
+  }, []);
+
+  const fetchPrompts = async () => {
+    try {
+      const response = await fetch('/api/prompts');
+      if (!response.ok) throw new Error('Failed to fetch prompts');
+      
+      const data = await response.json();
+      setPrompts(data.prompts);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="container py-12">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="container py-12">
+        <div className="text-center">
+          <p className="text-red-600">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container py-12">
+      <div className="mb-8">
+        <h1 className="mb-4">Composed Prompts</h1>
+        <p className="text-gray-600">
+          View and manage your composed prompts that use multiple snippets
+        </p>
+      </div>
+
+      {prompts.length === 0 ? (
+        <div className="text-center py-12">
+          <p className="text-gray-500 mb-6">No prompts created yet.</p>
+          <Link href="/prompts/new">
+            <Button>Create Your First Prompt</Button>
+          </Link>
+        </div>
+      ) : (
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {prompts.map(prompt => (
+            <Link key={prompt.id} href={`/prompts/${prompt.id}`}>
+              <Card variant="hover" className="h-full">
+                <h3 className="font-semibold text-lg mb-2">{prompt.name}</h3>
+                
+                <div className="mb-3">
+                  <p className="text-sm text-gray-600 mb-1">Template Preview:</p>
+                  <p className="text-sm font-mono bg-gray-50 p-2 rounded">
+                    {prompt.template.length > 100
+                      ? prompt.template.substring(0, 100) + '...'
+                      : prompt.template}
+                  </p>
+                </div>
+
+                {prompt.used_snippets.length > 0 && (
+                  <div className="mb-3">
+                    <p className="text-sm text-gray-600 mb-1">Used Snippets:</p>
+                    <div className="flex flex-wrap gap-1">
+                      {prompt.used_snippets.slice(0, 3).map(snippet => (
+                        <span
+                          key={snippet}
+                          className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs"
+                        >
+                          {snippet}
+                        </span>
+                      ))}
+                      {prompt.used_snippets.length > 3 && (
+                        <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">
+                          +{prompt.used_snippets.length - 3} more
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-xs text-gray-500">
+                  Created: {new Date(prompt.created_at).toLocaleDateString()}
+                </p>
+              </Card>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+</file>
+
+<file path="app/snippets/[name]/page.tsx">
+'use client';
+
+import React, { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
+import { SnippetEditor } from '@/components/SnippetEditor';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { Button } from '@/components/ui/Button';
+import Link from 'next/link';
+import type { Snippet } from '@/lib/types';
+
+export default function SnippetDetailPage() {
+  const params = useParams();
+  const name = params.name as string;
+  const [snippet, setSnippet] = useState<Snippet | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (name) {
+      fetchSnippet();
+    }
+  }, [name]);
+
+  const fetchSnippet = async () => {
+    try {
+      const response = await fetch(`/api/snippets/${encodeURIComponent(name)}`);
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('Snippet not found');
+        }
+        throw new Error('Failed to fetch snippet');
+      }
+      
+      const data = await response.json();
+      setSnippet(data.snippet);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="container py-12">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
+  if (error || !snippet) {
+    return (
+      <div className="container py-12">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold mb-4">Snippet Not Found</h1>
+          <p className="text-gray-600 mb-6">{error || 'The requested snippet could not be found.'}</p>
+          <Link href="/snippets">
+            <Button>Back to Snippets</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container py-12 max-w-5xl">
+      <div className="mb-6 flex items-center gap-4">
+        <Link href="/snippets">
+          <Button variant="ghost" size="sm">
+            ← Back to Library
+          </Button>
+        </Link>
+      </div>
+      
+      <SnippetEditor
+        snippet={snippet}
+        onUpdate={(updatedSnippet) => setSnippet(updatedSnippet)}
+      />
+    </div>
+  );
+}
+</file>
+
+<file path="app/snippets/new/page.tsx">
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { Input } from '@/components/ui/Input';
+import { Textarea } from '@/components/ui/Textarea';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { GenerationProgress } from '@/components/GenerationProgress';
+import { SnippetCard } from '@/components/SnippetCard';
+import type { Snippet } from '@/lib/types';
+import { parseHierarchy } from '@/lib/similarity';
+import type { SimilarityScore } from '@/lib/similarity';
+
+export default function NewSnippetPage() {
+  const router = useRouter();
+  const [name, setName] = useState('');
+  const [context, setContext] = useState('');
+  const [description, setDescription] = useState('');
+  const [generatedContent, setGeneratedContent] = useState('');
+  const [similarSnippets, setSimilarSnippets] = useState<SimilarityScore[]>([]);
+  const [selectedSnippets, setSelectedSnippets] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [currentStep, setCurrentStep] = useState('');
+  const [llmResponses, setLlmResponses] = useState<Record<string, string>>({});
+
+  // Fetch similar snippets when name changes
+  useEffect(() => {
+    if (name && name.includes('_')) {
+      fetchSimilarSnippets();
+    } else {
+      setSimilarSnippets([]);
+    }
+  }, [name]);
+
+  const fetchSimilarSnippets = async () => {
+    try {
+      const response = await fetch(`/api/similarity?name=${encodeURIComponent(name)}`);
+      if (!response.ok) return;
+      
+      const data = await response.json();
+      setSimilarSnippets(data.similarSnippets);
+      
+      // Auto-select top 3 similar snippets
+      const topSnippets = data.similarSnippets.slice(0, 3);
+      setSelectedSnippets(new Set(topSnippets.map((s: SimilarityScore) => s.snippet.name)));
+    } catch (err) {
+      console.error('Error fetching similar snippets:', err);
+    }
+  };
+
+  const handleGenerate = async () => {
+    if (!name || !context) {
+      setError('Please provide both a name and context');
+      return;
+    }
+
+    setGenerating(true);
+    setError(null);
+    setProgress(0);
+    setCurrentStep('Initializing generation...');
+
+    try {
+      // Get selected snippet objects
+      const selectedSnippetObjects = similarSnippets
+        .filter(s => selectedSnippets.has(s.snippet.name))
+        .map(s => s.snippet);
+
+      // Simulate progress updates
+      const progressInterval = setInterval(() => {
+        setProgress(prev => Math.min(prev + 10, 90));
+      }, 1000);
+
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          snippetName: name,
+          context,
+          similarSnippets: selectedSnippetObjects
+        })
+      });
+
+      clearInterval(progressInterval);
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Generation failed');
+      }
+
+      const data = await response.json();
+      setGeneratedContent(data.finalContent);
+      setLlmResponses(data.responses);
+      setProgress(100);
+      setCurrentStep('Generation complete!');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Generation failed');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!name || !generatedContent) {
+      setError('Name and content are required');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/snippets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          content: generatedContent,
+          description: description || context
+        })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to save snippet');
+      }
+
+      router.push(`/snippets/${encodeURIComponent(name)}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save snippet');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const hierarchyPath = name ? parseHierarchy(name).join(' > ') : '';
+
+  return (
+    <div className="container py-12 max-w-6xl">
+      <h1 className="mb-8">Create New Snippet</h1>
+
+      <div className="grid lg:grid-cols-2 gap-8">
+        <div className="space-y-6">
+          <Card>
+            <h2 className="mb-4">Snippet Details</h2>
+            
+            <div className="space-y-4">
+              <Input
+                label="Snippet Name"
+                placeholder="e.g., geo_asia_japan"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                fullWidth
+              />
+              {hierarchyPath && (
+                <p className="text-sm text-gray-600">
+                  Hierarchy: <span className="font-mono">{hierarchyPath}</span>
+                </p>
+              )}
+
+              <Textarea
+                label="Context / Requirements"
+                placeholder="Describe what this snippet should contain..."
+                value={context}
+                onChange={(e) => setContext(e.target.value)}
+                rows={6}
+                fullWidth
+              />
+
+              <Input
+                label="Description (optional)"
+                placeholder="Brief description for library display"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                fullWidth
+              />
+            </div>
+          </Card>
+
+          {similarSnippets.length > 0 && (
+            <Card>
+              <h2 className="mb-4">Similar Snippets</h2>
+              <p className="text-sm text-gray-600 mb-4">
+                Select snippets to use as reference during generation:
+              </p>
+              
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {similarSnippets.map(({ snippet, score }) => (
+                  <div
+                    key={snippet.id}
+                    className="cursor-pointer"
+                    onClick={() => {
+                      const newSelected = new Set(selectedSnippets);
+                      if (newSelected.has(snippet.name)) {
+                        newSelected.delete(snippet.name);
+                      } else {
+                        newSelected.add(snippet.name);
+                      }
+                      setSelectedSnippets(newSelected);
+                    }}
+                  >
+                    <Card
+                      variant={selectedSnippets.has(snippet.name) ? 'selected' : 'hover'}
+                      padding="sm"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <h4 className="font-medium">{snippet.name}</h4>
+                          <p className="text-sm text-gray-600 mt-1">
+                            Similarity: {score}%
+                          </p>
+                        </div>
+                        <div className="ml-3">
+                          {selectedSnippets.has(snippet.name) && (
+                            <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </div>
+                      </div>
+                    </Card>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+        </div>
+
+        <div className="space-y-6">
+          {!generating && !generatedContent && (
+            <Card>
+              <h2 className="mb-4">Generate Content</h2>
+              <p className="text-gray-600 mb-6">
+                Click generate to create content using multiple LLMs based on your context and similar snippets.
+              </p>
+              
+              <Button
+                onClick={handleGenerate}
+                disabled={!name || !context || generating}
+                fullWidth
+                size="lg"
+              >
+                Generate with Multi-LLM
+              </Button>
+            </Card>
+          )}
+
+          {generating && (
+            <Card>
+              <h2 className="mb-4">Generating Content</h2>
+              <GenerationProgress
+                currentStep={currentStep}
+                progress={progress}
+                responses={llmResponses}
+              />
+            </Card>
+          )}
+
+          {generatedContent && (
+            <Card>
+              <h2 className="mb-4">Generated Content</h2>
+              
+              <Textarea
+                value={generatedContent}
+                onChange={(e) => setGeneratedContent(e.target.value)}
+                rows={15}
+                fullWidth
+                className="font-mono text-sm"
+              />
+              
+              <div className="mt-6 flex gap-3">
+                <Button
+                  onClick={handleSave}
+                  disabled={loading}
+                  isLoading={loading}
+                >
+                  Save Snippet
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={handleGenerate}
+                  disabled={generating}
+                >
+                  Regenerate
+                </Button>
+              </div>
+            </Card>
+          )}
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-md p-4">
+              <p className="text-red-600">{error}</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="app/snippets/page.tsx">
+'use client';
+
+import React, { useEffect, useState } from 'react';
+import { SearchBar } from '@/components/SearchBar';
+import { SnippetCard } from '@/components/SnippetCard';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { groupByTopLevel } from '@/lib/similarity';
+import type { Snippet } from '@/lib/types';
+
+export default function SnippetsPage() {
+  const [snippets, setSnippets] = useState<Snippet[]>([]);
+  const [filteredSnippets, setFilteredSnippets] = useState<Snippet[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    fetchSnippets();
+  }, []);
+
+  useEffect(() => {
+    if (searchQuery) {
+      const filtered = snippets.filter(snippet =>
+        snippet.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        snippet.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        snippet.content.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      setFilteredSnippets(filtered);
+    } else {
+      setFilteredSnippets(snippets);
+    }
+  }, [searchQuery, snippets]);
+
+  const fetchSnippets = async () => {
+    try {
+      const response = await fetch('/api/snippets');
+      if (!response.ok) throw new Error('Failed to fetch snippets');
+      
+      const data = await response.json();
+      setSnippets(data.snippets);
+      setFilteredSnippets(data.snippets);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const groupedSnippets = groupByTopLevel(filteredSnippets);
+
+  if (loading) {
+    return (
+      <div className="container py-12">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="container py-12">
+        <div className="text-center">
+          <p className="text-red-600">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container py-12">
+      <div className="mb-8">
+        <h1 className="mb-4">Snippet Library</h1>
+        <p className="text-gray-600 mb-6">
+          Browse and search through all available prompt snippets
+        </p>
+        
+        <SearchBar
+          placeholder="Search snippets by name, description, or content..."
+          value={searchQuery}
+          onChange={setSearchQuery}
+        />
+      </div>
+
+      {filteredSnippets.length === 0 ? (
+        <div className="text-center py-12">
+          <p className="text-gray-500">
+            {searchQuery ? 'No snippets found matching your search.' : 'No snippets created yet.'}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-8">
+          {Object.entries(groupedSnippets).map(([category, categorySnippets]) => (
+            <div key={category}>
+              <h2 className="mb-4 text-xl font-semibold capitalize">
+                {category}
+              </h2>
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {categorySnippets.map(snippet => (
+                  <SnippetCard key={snippet.id} snippet={snippet} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+</file>
+
+<file path="components/GenerationProgress.tsx">
+'use client';
+
+import React from 'react';
+import { Card } from '@/components/ui/Card';
+import { SUPPORTED_MODELS } from '@/lib/types';
+
+interface GenerationProgressProps {
+  currentStep: string;
+  progress: number;
+  responses?: Record<string, string>;
+}
+
+export const GenerationProgress: React.FC<GenerationProgressProps> = ({
+  currentStep,
+  progress,
+  responses = {}
+}) => {
+  const models = SUPPORTED_MODELS.slice(0, 3);
+  const combinerModel = SUPPORTED_MODELS[3];
+
+  return (
+    <div className="space-y-4">
+      <div className="mb-6">
+        <div className="flex justify-between mb-2">
+          <span className="text-sm font-medium">{currentStep}</span>
+          <span className="text-sm text-gray-600">{Math.round(progress)}%</span>
+        </div>
+        <div className="w-full bg-gray-200 rounded-full h-2">
+          <div
+            className="bg-primary h-2 rounded-full transition-all duration-300"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="font-semibold">Generation Progress:</h3>
+        
+        {models.map((model, index) => {
+          const modelProgress = (index + 1) / 4 * 100;
+          const isActive = progress >= modelProgress - 25 && progress < modelProgress;
+          const isComplete = progress >= modelProgress;
+          const hasResponse = responses[model.name];
+
+          return (
+            <Card
+              key={model.id}
+              variant={isActive ? 'selected' : 'default'}
+              padding="sm"
+              className={isComplete && !isActive ? 'bg-green-50 border-green-200' : ''}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {isComplete ? (
+                    <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : isActive ? (
+                    <div className="w-5 h-5">
+                      <svg className="animate-spin text-primary" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                    </div>
+                  ) : (
+                    <div className="w-5 h-5 rounded-full bg-gray-300" />
+                  )}
+                  <span className={`font-medium ${isActive ? 'text-primary' : ''}`}>
+                    {model.name}
+                  </span>
+                </div>
+                <span className="text-sm text-gray-500">{model.provider}</span>
+              </div>
+              
+              {hasResponse && (
+                <div className="mt-2 text-sm text-gray-600 font-mono bg-gray-50 p-2 rounded">
+                  {hasResponse.substring(0, 100)}...
+                </div>
+              )}
+            </Card>
+          );
+        })}
+
+        <Card
+          variant={progress >= 75 ? 'selected' : 'default'}
+          padding="sm"
+          className={progress === 100 ? 'bg-blue-50 border-blue-200' : ''}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {progress === 100 ? (
+                <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              ) : progress >= 75 ? (
+                <div className="w-5 h-5">
+                  <svg className="animate-spin text-primary" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                </div>
+              ) : (
+                <div className="w-5 h-5 rounded-full bg-gray-300" />
+              )}
+              <span className={`font-medium ${progress >= 75 && progress < 100 ? 'text-primary' : ''}`}>
+                {combinerModel.name} (Combiner)
+              </span>
+            </div>
+            <span className="text-sm text-gray-500">{combinerModel.provider}</span>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+};
+</file>
+
+<file path="components/PromptComposer.tsx">
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { Textarea } from '@/components/ui/Textarea';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { extractSnippetReferences, validateTemplate } from '@/lib/snippet-utils';
+import type { Snippet } from '@/lib/types';
+
+interface PromptComposerProps {
+  initialTemplate?: string;
+  onSave?: (template: string, rendered: string, usedSnippets: string[]) => void;
+}
+
+export const PromptComposer: React.FC<PromptComposerProps> = ({
+  initialTemplate = '',
+  onSave
+}) => {
+  const [template, setTemplate] = useState(initialTemplate);
+  const [rendered, setRendered] = useState('');
+  const [usedSnippets, setUsedSnippets] = useState<string[]>([]);
+  const [snippetPreviews, setSnippetPreviews] = useState<Record<string, Snippet>>({});
+  const [rendering, setRendering] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+
+  useEffect(() => {
+    const validation = validateTemplate(template);
+    setValidationErrors(validation.errors);
+    
+    if (validation.valid) {
+      const refs = extractSnippetReferences(template);
+      fetchSnippetPreviews(refs);
+    }
+  }, [template]);
+
+  const fetchSnippetPreviews = async (names: string[]) => {
+    const previews: Record<string, Snippet> = {};
+    
+    for (const name of names) {
+      try {
+        const response = await fetch(`/api/snippets/${encodeURIComponent(name)}`);
+        if (response.ok) {
+          const data = await response.json();
+          previews[name] = data.snippet;
+        }
+      } catch (err) {
+        console.error(`Failed to fetch snippet ${name}:`, err);
+      }
+    }
+    
+    setSnippetPreviews(previews);
+  };
+
+  const handleRender = async () => {
+    if (validationErrors.length > 0) {
+      setError('Please fix template syntax errors before rendering');
+      return;
+    }
+
+    setRendering(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/render', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ template })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to render template');
+      }
+
+      const data = await response.json();
+      setRendered(data.rendered);
+      setUsedSnippets(data.usedSnippets);
+      
+      if (data.errors.length > 0) {
+        setError(`Rendering completed with warnings: ${data.errors.join(', ')}`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to render template');
+    } finally {
+      setRendering(false);
+    }
+  };
+
+  const handleSave = () => {
+    if (!rendered) {
+      setError('Please render the template before saving');
+      return;
+    }
+    
+    onSave?.(template, rendered, usedSnippets);
+  };
+
+  const snippetRefs = extractSnippetReferences(template);
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <h2 className="mb-4">Template Editor</h2>
+        
+        <Textarea
+          label="Prompt Template"
+          placeholder="Enter your prompt template. Use {{snippet_name}} to reference snippets..."
+          value={template}
+          onChange={(e) => setTemplate(e.target.value)}
+          rows={10}
+          fullWidth
+          className="font-mono text-sm"
+        />
+
+        {validationErrors.length > 0 && (
+          <div className="mt-2 text-sm text-red-600">
+            {validationErrors.map((err, i) => (
+              <p key={i}>• {err}</p>
+            ))}
+          </div>
+        )}
+
+        {snippetRefs.length > 0 && (
+          <div className="mt-4">
+            <p className="text-sm font-medium mb-2">Referenced Snippets:</p>
+            <div className="flex flex-wrap gap-2">
+              {snippetRefs.map(ref => {
+                const preview = snippetPreviews[ref];
+                return (
+                  <div
+                    key={ref}
+                    className={`px-3 py-1 rounded-full text-sm ${
+                      preview
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-red-100 text-red-800'
+                    }`}
+                  >
+                    {ref} {preview ? '✓' : '✗'}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="mt-6">
+          <Button
+            onClick={handleRender}
+            disabled={rendering || validationErrors.length > 0}
+            isLoading={rendering}
+          >
+            Render Template
+          </Button>
+        </div>
+      </Card>
+
+      {rendered && (
+        <Card>
+          <h2 className="mb-4">Rendered Output</h2>
+          
+          <div className="bg-gray-50 p-4 rounded-md">
+            <pre className="whitespace-pre-wrap font-mono text-sm">{rendered}</pre>
+          </div>
+
+          {usedSnippets.length > 0 && (
+            <div className="mt-4">
+              <p className="text-sm font-medium mb-2">Used Snippets:</p>
+              <div className="flex flex-wrap gap-2">
+                {usedSnippets.map(name => (
+                  <span
+                    key={name}
+                    className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
+                  >
+                    {name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {onSave && (
+            <div className="mt-6">
+              <Button onClick={handleSave}>
+                Save Composed Prompt
+              </Button>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-md p-4">
+          <p className="text-red-600">{error}</p>
+        </div>
+      )}
+    </div>
+  );
+};
+</file>
+
+<file path="components/SearchBar.tsx">
+'use client';
+
+import React, { useState } from 'react';
+import { Input } from '@/components/ui/Input';
+
+interface SearchBarProps {
+  placeholder?: string;
+  value?: string;
+  onChange?: (value: string) => void;
+  onSearch?: (value: string) => void;
+}
+
+export const SearchBar: React.FC<SearchBarProps> = ({
+  placeholder = 'Search...',
+  value: controlledValue,
+  onChange,
+  onSearch
+}) => {
+  const [internalValue, setInternalValue] = useState('');
+  const value = controlledValue !== undefined ? controlledValue : internalValue;
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = e.target.value;
+    if (controlledValue === undefined) {
+      setInternalValue(newValue);
+    }
+    onChange?.(newValue);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      onSearch?.(value);
+    }
+  };
+
+  return (
+    <div className="relative">
+      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+        <svg
+          className="h-5 w-5 text-gray-400"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+          />
+        </svg>
+      </div>
+      <Input
+        type="text"
+        placeholder={placeholder}
+        value={value}
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        className="pl-10 pr-4"
+        fullWidth
+      />
+    </div>
+  );
+};
+</file>
+
+<file path="components/SnippetCard.tsx">
+'use client';
+
+import React from 'react';
+import Link from 'next/link';
+import { Card } from '@/components/ui/Card';
+import { getHierarchyDisplay } from '@/lib/similarity';
+import type { Snippet } from '@/lib/types';
+
+interface SnippetCardProps {
+  snippet: Snippet;
+  onClick?: () => void;
+}
+
+export const SnippetCard: React.FC<SnippetCardProps> = ({ snippet, onClick }) => {
+  const hierarchyPath = getHierarchyDisplay(snippet.name);
+  const truncatedContent = snippet.content.length > 150
+    ? snippet.content.substring(0, 150) + '...'
+    : snippet.content;
+
+  const CardContent = (
+    <>
+      <div className="mb-2">
+        <h3 className="font-semibold text-lg">{snippet.name}</h3>
+        <p className="hierarchy-path">{hierarchyPath}</p>
+      </div>
+      
+      {snippet.description && (
+        <p className="text-sm text-gray-600 mb-2">{snippet.description}</p>
+      )}
+      
+      <p className="text-sm text-gray-700 font-mono bg-gray-50 p-2 rounded">
+        {truncatedContent}
+      </p>
+      
+      <div className="mt-3 text-xs text-gray-500">
+        Created: {new Date(snippet.created_at).toLocaleDateString()}
+      </div>
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <Card
+        variant="hover"
+        onClick={onClick}
+        className="h-full"
+      >
+        {CardContent}
+      </Card>
+    );
+  }
+
+  return (
+    <Link href={`/snippets/${encodeURIComponent(snippet.name)}`}>
+      <Card variant="hover" className="h-full">
+        {CardContent}
+      </Card>
+    </Link>
+  );
+};
+</file>
+
+<file path="components/SnippetEditor.tsx">
+'use client';
+
+import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Input } from '@/components/ui/Input';
+import { Textarea } from '@/components/ui/Textarea';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { getHierarchyDisplay } from '@/lib/similarity';
+import type { Snippet } from '@/lib/types';
+
+interface SnippetEditorProps {
+  snippet: Snippet;
+  onUpdate?: (updatedSnippet: Snippet) => void;
+  onDelete?: () => void;
+}
+
+export const SnippetEditor: React.FC<SnippetEditorProps> = ({
+  snippet,
+  onUpdate,
+  onDelete
+}) => {
+  const router = useRouter();
+  const [content, setContent] = useState(snippet.content);
+  const [description, setDescription] = useState(snippet.description || '');
+  const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const hierarchyPath = getHierarchyDisplay(snippet.name);
+  const hasChanges = content !== snippet.content || description !== (snippet.description || '');
+
+  const handleSave = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/snippets/${encodeURIComponent(snippet.name)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content, description })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to update snippet');
+      }
+
+      const data = await response.json();
+      onUpdate?.(data.snippet);
+      
+      // Reset to new values
+      setContent(data.snippet.content);
+      setDescription(data.snippet.description || '');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update snippet');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/snippets/${encodeURIComponent(snippet.name)}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete snippet');
+      }
+
+      onDelete?.();
+      router.push('/snippets');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete snippet');
+      setShowDeleteConfirm(false);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <div className="mb-6">
+          <h2 className="text-2xl font-bold">{snippet.name}</h2>
+          <p className="hierarchy-path mt-1">{hierarchyPath}</p>
+          <p className="text-sm text-gray-500 mt-2">
+            Created: {new Date(snippet.created_at).toLocaleDateString()} | 
+            Updated: {new Date(snippet.updated_at).toLocaleDateString()}
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          <Textarea
+            label="Content"
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            rows={15}
+            fullWidth
+            className="font-mono text-sm"
+          />
+
+          <Input
+            label="Description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Brief description for library display"
+            fullWidth
+          />
+        </div>
+
+        {error && (
+          <div className="mt-4 bg-red-50 border border-red-200 rounded-md p-4">
+            <p className="text-red-600">{error}</p>
+          </div>
+        )}
+
+        <div className="mt-6 flex justify-between">
+          <Button
+            variant="danger"
+            onClick={() => setShowDeleteConfirm(true)}
+            disabled={deleting}
+          >
+            Delete Snippet
+          </Button>
+          
+          <div className="flex gap-3">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setContent(snippet.content);
+                setDescription(snippet.description || '');
+              }}
+              disabled={!hasChanges || loading}
+            >
+              Reset Changes
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={!hasChanges || loading}
+              isLoading={loading}
+            >
+              Save Changes
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {showDeleteConfirm && (
+        <Card className="border-red-200 bg-red-50">
+          <h3 className="font-semibold text-red-900 mb-2">Confirm Deletion</h3>
+          <p className="text-red-700 mb-4">
+            Are you sure you want to delete "{snippet.name}"? This action cannot be undone.
+          </p>
+          <div className="flex gap-3">
+            <Button
+              variant="danger"
+              onClick={handleDelete}
+              disabled={deleting}
+              isLoading={deleting}
+            >
+              Yes, Delete
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => setShowDeleteConfirm(false)}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+};
+</file>
+
+<file path="components/SnippetHierarchy.tsx">
+'use client';
+
+import React from 'react';
+import Link from 'next/link';
+import { parseHierarchy } from '@/lib/similarity';
+import type { Snippet } from '@/lib/types';
+
+interface SnippetHierarchyProps {
+  snippets: Snippet[];
+  currentSnippet?: string;
+}
+
+interface HierarchyNode {
+  name: string;
+  children: Map<string, HierarchyNode>;
+  snippet?: Snippet;
+}
+
+export const SnippetHierarchy: React.FC<SnippetHierarchyProps> = ({
+  snippets,
+  currentSnippet
+}) => {
+  // Build hierarchy tree
+  const root: HierarchyNode = {
+    name: 'root',
+    children: new Map()
+  };
+
+  snippets.forEach(snippet => {
+    const parts = parseHierarchy(snippet.name);
+    let current = root;
+
+    parts.forEach((part, index) => {
+      if (!current.children.has(part)) {
+        current.children.set(part, {
+          name: part,
+          children: new Map()
+        });
+      }
+      
+      current = current.children.get(part)!;
+      
+      // If this is the last part, attach the snippet
+      if (index === parts.length - 1) {
+        current.snippet = snippet;
+      }
+    });
+  });
+
+  const renderNode = (node: HierarchyNode, path: string[] = [], level: number = 0) => {
+    const fullPath = [...path, node.name].filter(p => p !== 'root').join('_');
+    const isCurrentSnippet = fullPath === currentSnippet;
+    const hasChildren = node.children.size > 0;
+
+    if (node.name === 'root') {
+      return (
+        <div className="space-y-1">
+          {Array.from(node.children.values()).map(child =>
+            renderNode(child, path, level)
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div key={fullPath} className="select-none">
+        <div
+          className={`
+            flex items-center py-1.5 px-2 rounded-md transition-colors
+            hover:bg-gray-100 cursor-pointer
+            ${isCurrentSnippet ? 'bg-blue-50 text-blue-700' : ''}
+          `}
+          style={{ paddingLeft: `${level * 24 + 8}px` }}
+        >
+          <div className="flex items-center gap-2 flex-1">
+            {hasChildren ? (
+              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            ) : (
+              <div className="w-4" />
+            )}
+            
+            {node.snippet ? (
+              <Link
+                href={`/snippets/${encodeURIComponent(node.snippet.name)}`}
+                className="flex-1 hover:text-primary"
+              >
+                <span className="font-mono text-sm">{node.name}</span>
+                {node.snippet.description && (
+                  <span className="ml-2 text-xs text-gray-500">
+                    {node.snippet.description.substring(0, 50)}...
+                  </span>
+                )}
+              </Link>
+            ) : (
+              <span className="font-mono text-sm text-gray-600">{node.name}</span>
+            )}
+          </div>
+        </div>
+
+        {hasChildren && (
+          <div className="ml-2">
+            {Array.from(node.children.values()).map(child =>
+              renderNode(child, [...path, node.name], level + 1)
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="bg-white rounded-lg border p-4">
+      <h3 className="font-semibold mb-3">Snippet Hierarchy</h3>
+      {snippets.length === 0 ? (
+        <p className="text-gray-500 text-sm">No snippets available</p>
+      ) : (
+        renderNode(root)
+      )}
+    </div>
+  );
+};
+</file>
+
+<file path="components/ui/Button.tsx">
+import React from 'react';
+import { clsx } from 'clsx';
+
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
+  size?: 'sm' | 'md' | 'lg';
+  fullWidth?: boolean;
+  isLoading?: boolean;
+}
+
+export const Button: React.FC<ButtonProps> = ({
+  children,
+  className,
+  variant = 'primary',
+  size = 'md',
+  fullWidth = false,
+  isLoading = false,
+  disabled,
+  ...props
+}) => {
+  const baseStyles = 'inline-flex items-center justify-center font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2';
+  
+  const variants = {
+    primary: 'bg-primary hover:bg-secondary text-white focus:ring-primary',
+    secondary: 'bg-gray-200 hover:bg-gray-300 text-gray-900 focus:ring-gray-500',
+    danger: 'bg-red-600 hover:bg-red-700 text-white focus:ring-red-500',
+    ghost: 'hover:bg-gray-100 text-gray-700 focus:ring-gray-500'
+  };
+  
+  const sizes = {
+    sm: 'px-3 py-1.5 text-sm',
+    md: 'px-4 py-2 text-base',
+    lg: 'px-6 py-3 text-lg'
+  };
+  
+  return (
+    <button
+      className={clsx(
+        baseStyles,
+        variants[variant],
+        sizes[size],
+        fullWidth && 'w-full',
+        (disabled || isLoading) && 'opacity-50 cursor-not-allowed',
+        className
+      )}
+      disabled={disabled || isLoading}
+      {...props}
+    >
+      {isLoading ? (
+        <>
+          <svg className="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+          Loading...
+        </>
+      ) : children}
+    </button>
+  );
+};
+</file>
+
+<file path="components/ui/Card.tsx">
+import React from 'react';
+import { clsx } from 'clsx';
+
+interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
+  variant?: 'default' | 'hover' | 'selected';
+  padding?: 'none' | 'sm' | 'md' | 'lg';
+}
+
+export const Card: React.FC<CardProps> = ({
+  children,
+  className,
+  variant = 'default',
+  padding = 'md',
+  ...props
+}) => {
+  const baseStyles = 'bg-white rounded-lg shadow';
+  
+  const variants = {
+    default: 'border border-gray-200',
+    hover: 'border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all cursor-pointer',
+    selected: 'border-2 border-primary shadow-md'
+  };
+  
+  const paddings = {
+    none: '',
+    sm: 'p-3',
+    md: 'p-5',
+    lg: 'p-8'
+  };
+  
+  return (
+    <div
+      className={clsx(
+        baseStyles,
+        variants[variant],
+        paddings[padding],
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </div>
+  );
+};
+</file>
+
+<file path="components/ui/Input.tsx">
+import React from 'react';
+import { clsx } from 'clsx';
+
+interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  label?: string;
+  error?: string;
+  fullWidth?: boolean;
+}
+
+export const Input: React.FC<InputProps> = ({
+  label,
+  error,
+  className,
+  fullWidth = false,
+  id,
+  ...props
+}) => {
+  const inputId = id || `input-${Math.random().toString(36).substr(2, 9)}`;
+  
+  return (
+    <div className={clsx('', fullWidth && 'w-full')}>
+      {label && (
+        <label htmlFor={inputId} className="block text-sm font-medium text-gray-700 mb-1">
+          {label}
+        </label>
+      )}
+      <input
+        id={inputId}
+        className={clsx(
+          'block rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm',
+          'px-3 py-2 border',
+          error && 'border-red-500 focus:border-red-500 focus:ring-red-500',
+          fullWidth && 'w-full',
+          className
+        )}
+        {...props}
+      />
+      {error && (
+        <p className="mt-1 text-sm text-red-600">{error}</p>
+      )}
+    </div>
+  );
+};
+</file>
+
+<file path="components/ui/LoadingSpinner.tsx">
+import React from 'react';
+import { clsx } from 'clsx';
+
+interface LoadingSpinnerProps {
+  size?: 'sm' | 'md' | 'lg';
+  className?: string;
+}
+
+export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
+  size = 'md',
+  className
+}) => {
+  const sizes = {
+    sm: 'h-4 w-4',
+    md: 'h-8 w-8',
+    lg: 'h-12 w-12'
+  };
+  
+  return (
+    <div className="flex justify-center items-center">
+      <svg
+        className={clsx('animate-spin text-primary', sizes[size], className)}
+        fill="none"
+        viewBox="0 0 24 24"
+      >
+        <circle
+          className="opacity-25"
+          cx="12"
+          cy="12"
+          r="10"
+          stroke="currentColor"
+          strokeWidth="4"
+        />
+        <path
+          className="opacity-75"
+          fill="currentColor"
+          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+        />
+      </svg>
+    </div>
+  );
+};
+</file>
+
+<file path="components/ui/Textarea.tsx">
+import React from 'react';
+import { clsx } from 'clsx';
+
+interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
+  label?: string;
+  error?: string;
+  fullWidth?: boolean;
+}
+
+export const Textarea: React.FC<TextareaProps> = ({
+  label,
+  error,
+  className,
+  fullWidth = false,
+  id,
+  ...props
+}) => {
+  const textareaId = id || `textarea-${Math.random().toString(36).substr(2, 9)}`;
+  
+  return (
+    <div className={clsx('', fullWidth && 'w-full')}>
+      {label && (
+        <label htmlFor={textareaId} className="block text-sm font-medium text-gray-700 mb-1">
+          {label}
+        </label>
+      )}
+      <textarea
+        id={textareaId}
+        className={clsx(
+          'block rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm',
+          'px-3 py-2 border',
+          error && 'border-red-500 focus:border-red-500 focus:ring-red-500',
+          fullWidth && 'w-full',
+          className
+        )}
+        {...props}
+      />
+      {error && (
+        <p className="mt-1 text-sm text-red-600">{error}</p>
+      )}
+    </div>
+  );
+};
+</file>
+
+<file path="lib/openrouter.ts">
+import { SUPPORTED_MODELS } from './types';
+import type { Snippet } from './types';
+
+interface OpenRouterResponse {
+  id: string;
+  choices: {
+    message: {
+      content: string;
+      role: string;
+    };
+  }[];
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+}
+
+interface GenerationRequest {
+  context: string;
+  snippetName: string;
+  similarSnippets: Snippet[];
+}
+
+const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+
+/**
+ * Generate a prompt for creating a new snippet
+ */
+function createGenerationPrompt(request: GenerationRequest): string {
+  const { context, snippetName, similarSnippets } = request;
+  
+  let prompt = `You are creating a prompt snippet called "${snippetName}".
+
+User Context/Requirements:
+${context}
+
+`;
+
+  if (similarSnippets.length > 0) {
+    prompt += `Here are some similar snippets for reference:\n\n`;
+    
+    similarSnippets.forEach(snippet => {
+      prompt += `Snippet: ${snippet.name}\n`;
+      if (snippet.description) {
+        prompt += `Description: ${snippet.description}\n`;
+      }
+      prompt += `Content:\n${snippet.content}\n\n---\n\n`;
+    });
+  }
+
+  prompt += `Based on the context and similar snippets (if provided), create a high-quality prompt snippet for "${snippetName}". 
+
+The snippet should:
+1. Be clear, specific, and reusable
+2. Follow a similar structure to the reference snippets if applicable
+3. Be self-contained but work well when composed with other snippets
+4. Avoid redundancy with existing snippets
+
+Provide only the snippet content, without any additional explanation.`;
+
+  return prompt;
+}
+
+/**
+ * Generate snippet content using a specific LLM
+ */
+export async function generateWithLLM(
+  modelId: string,
+  request: GenerationRequest
+): Promise<string> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  
+  if (!apiKey) {
+    throw new Error('OPENROUTER_API_KEY is not configured');
+  }
+
+  const prompt = createGenerationPrompt(request);
+
+  const response = await fetch(OPENROUTER_API_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+      'X-Title': 'Prompt Builder'
+    },
+    body: JSON.stringify({
+      model: modelId,
+      messages: [
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 2000
+    })
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`OpenRouter API error: ${response.status} - ${error}`);
+  }
+
+  const data: OpenRouterResponse = await response.json();
+  
+  if (!data.choices || data.choices.length === 0) {
+    throw new Error('No response from OpenRouter');
+  }
+
+  return data.choices[0].message.content;
+}
+
+/**
+ * Combine multiple LLM responses into a final version
+ */
+function createCombinerPrompt(
+  snippetName: string,
+  context: string,
+  responses: Record<string, string>
+): string {
+  let prompt = `You are combining multiple AI-generated versions of a prompt snippet called "${snippetName}".
+
+Original Context: ${context}
+
+Here are the different versions:
+
+`;
+
+  Object.entries(responses).forEach(([model, content]) => {
+    prompt += `=== Version from ${model} ===\n${content}\n\n`;
+  });
+
+  prompt += `Please analyze these versions and create a final, optimized version that:
+1. Combines the best elements from each version
+2. Maintains consistency and clarity
+3. Removes any redundancy
+4. Ensures the snippet is self-contained and reusable
+
+Provide only the final snippet content, without any additional explanation.`;
+
+  return prompt;
+}
+
+/**
+ * Generate snippet using multiple LLMs and combine results
+ */
+export async function generateSnippetWithMultipleLLMs(
+  request: GenerationRequest,
+  onProgress?: (step: string, progress: number) => void
+): Promise<{
+  responses: Record<string, string>;
+  finalContent: string;
+}> {
+  const responses: Record<string, string> = {};
+  
+  // Step 1: Generate with 3 different LLMs
+  const generationModels = SUPPORTED_MODELS.slice(0, 3);
+  
+  for (let i = 0; i < generationModels.length; i++) {
+    const model = generationModels[i];
+    const progress = (i + 1) / 4 * 100;
+    
+    try {
+      onProgress?.(`Generating with ${model.name}...`, progress * 0.75);
+      const response = await generateWithLLM(model.id, request);
+      responses[model.name] = response;
+    } catch (error) {
+      console.error(`Error with ${model.name}:`, error);
+      responses[model.name] = `Error generating with ${model.name}`;
+    }
+  }
+
+  // Step 2: Combine with the 4th LLM
+  onProgress?.('Combining responses...', 90);
+  
+  const combinerModel = SUPPORTED_MODELS[3];
+  const combinerPrompt = createCombinerPrompt(
+    request.snippetName,
+    request.context,
+    responses
+  );
+
+  let finalContent: string;
+  
+  try {
+    const response = await fetch(OPENROUTER_API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+        'X-Title': 'Prompt Builder'
+      },
+      body: JSON.stringify({
+        model: combinerModel.id,
+        messages: [
+          {
+            role: 'user',
+            content: combinerPrompt
+          }
+        ],
+        temperature: 0.5,
+        max_tokens: 2000
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Combiner API error: ${response.status}`);
+    }
+
+    const data: OpenRouterResponse = await response.json();
+    finalContent = data.choices[0].message.content;
+  } catch (error) {
+    console.error('Error combining responses:', error);
+    // Fallback to the first successful response
+    finalContent = Object.values(responses).find(r => !r.startsWith('Error')) || 'Failed to generate snippet';
+  }
+
+  onProgress?.('Generation complete!', 100);
+
+  return {
+    responses,
+    finalContent
+  };
+}
+
+/**
+ * Test OpenRouter connection
+ */
+export async function testOpenRouterConnection(): Promise<boolean> {
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/models', {
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`
+      }
+    });
+    
+    return response.ok;
+  } catch (error) {
+    console.error('OpenRouter connection test failed:', error);
+    return false;
+  }
+}
+</file>
+
+<file path="lib/similarity.ts">
+import type { Snippet } from './types';
+
+export interface SimilarityScore {
+  snippet: Snippet;
+  score: number;
+  sharedPath: string[];
+}
+
+/**
+ * Parse a snippet name into its hierarchical components
+ * e.g., "geo_asia_japan" -> ["geo", "asia", "japan"]
+ */
+export function parseHierarchy(name: string): string[] {
+  return name.split('_').filter(part => part.length > 0);
+}
+
+/**
+ * Calculate similarity score between two snippet names based on hierarchy
+ * Higher score means more similar
+ */
+export function calculateSimilarity(name1: string, name2: string): { score: number; sharedPath: string[] } {
+  const parts1 = parseHierarchy(name1);
+  const parts2 = parseHierarchy(name2);
+  
+  let sharedDepth = 0;
+  const sharedPath: string[] = [];
+  
+  // Find how many levels they share from the beginning
+  for (let i = 0; i < Math.min(parts1.length, parts2.length); i++) {
+    if (parts1[i] === parts2[i]) {
+      sharedDepth++;
+      sharedPath.push(parts1[i]);
+    } else {
+      break;
+    }
+  }
+  
+  // Calculate score based on:
+  // 1. Shared depth (most important)
+  // 2. Total depth similarity
+  // 3. Penalty for being the same snippet
+  
+  if (name1 === name2) {
+    return { score: 0, sharedPath }; // Exclude identical snippets
+  }
+  
+  const maxDepth = Math.max(parts1.length, parts2.length);
+  const depthDifference = Math.abs(parts1.length - parts2.length);
+  
+  // Base score from shared depth (0-100)
+  let score = (sharedDepth / maxDepth) * 100;
+  
+  // Bonus for similar depths (0-20)
+  score += (1 - depthDifference / maxDepth) * 20;
+  
+  // Extra bonus for immediate siblings (same parent, different last part)
+  if (sharedDepth === parts1.length - 1 && sharedDepth === parts2.length - 1) {
+    score += 30;
+  }
+  
+  return { score: Math.round(score), sharedPath };
+}
+
+/**
+ * Find similar snippets based on hierarchical naming
+ */
+export function findSimilarSnippets(
+  targetName: string,
+  allSnippets: Snippet[],
+  limit: number = 5
+): SimilarityScore[] {
+  const similarities = allSnippets
+    .map(snippet => ({
+      snippet,
+      ...calculateSimilarity(targetName, snippet.name)
+    }))
+    .filter(item => item.score > 0) // Exclude identical and unrelated snippets
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+  
+  return similarities;
+}
+
+/**
+ * Get the hierarchical path display
+ * e.g., "geo_asia_japan" -> "geo > asia > japan"
+ */
+export function getHierarchyDisplay(name: string): string {
+  return parseHierarchy(name).join(' > ');
+}
+
+/**
+ * Get parent path from a snippet name
+ * e.g., "geo_asia_japan" -> "geo_asia"
+ */
+export function getParentPath(name: string): string | null {
+  const parts = parseHierarchy(name);
+  if (parts.length <= 1) return null;
+  return parts.slice(0, -1).join('_');
+}
+
+/**
+ * Get all ancestor paths
+ * e.g., "geo_asia_japan" -> ["geo", "geo_asia"]
+ */
+export function getAncestorPaths(name: string): string[] {
+  const parts = parseHierarchy(name);
+  const ancestors: string[] = [];
+  
+  for (let i = 1; i < parts.length; i++) {
+    ancestors.push(parts.slice(0, i).join('_'));
+  }
+  
+  return ancestors;
+}
+
+/**
+ * Check if one snippet is an ancestor of another
+ */
+export function isAncestor(ancestorName: string, descendantName: string): boolean {
+  const ancestorParts = parseHierarchy(ancestorName);
+  const descendantParts = parseHierarchy(descendantName);
+  
+  if (ancestorParts.length >= descendantParts.length) {
+    return false;
+  }
+  
+  for (let i = 0; i < ancestorParts.length; i++) {
+    if (ancestorParts[i] !== descendantParts[i]) {
+      return false;
+    }
+  }
+  
+  return true;
+}
+
+/**
+ * Group snippets by their top-level category
+ */
+export function groupByTopLevel(snippets: Snippet[]): Record<string, Snippet[]> {
+  const groups: Record<string, Snippet[]> = {};
+  
+  snippets.forEach(snippet => {
+    const parts = parseHierarchy(snippet.name);
+    const topLevel = parts[0] || 'uncategorized';
+    
+    if (!groups[topLevel]) {
+      groups[topLevel] = [];
+    }
+    
+    groups[topLevel].push(snippet);
+  });
+  
+  return groups;
+}
+</file>
+
+<file path="lib/snippet-utils.ts">
+import { getSnippet } from './supabase';
+import type { Snippet } from './types';
+
+/**
+ * Extract all snippet references from a template
+ * e.g., "Hello {{world}} and {{universe}}" -> ["world", "universe"]
+ */
+export function extractSnippetReferences(template: string): string[] {
+  const regex = /\{\{([^}]+)\}\}/g;
+  const matches = [...template.matchAll(regex)];
+  return [...new Set(matches.map(match => match[1].trim()))];
+}
+
+/**
+ * Render a template by replacing all snippet references with their content
+ * Handles nested snippets recursively
+ */
+export async function renderTemplate(
+  template: string, 
+  maxDepth: number = 5,
+  currentDepth: number = 0
+): Promise<{ rendered: string; usedSnippets: string[]; errors: string[] }> {
+  if (currentDepth >= maxDepth) {
+    return {
+      rendered: template,
+      usedSnippets: [],
+      errors: ['Maximum nesting depth reached']
+    };
+  }
+
+  const snippetNames = extractSnippetReferences(template);
+  const usedSnippets: string[] = [];
+  const errors: string[] = [];
+  let rendered = template;
+
+  for (const snippetName of snippetNames) {
+    try {
+      const snippet = await getSnippet(snippetName);
+      
+      if (snippet) {
+        // Check if the snippet content has nested references
+        const nestedRefs = extractSnippetReferences(snippet.content);
+        let snippetContent = snippet.content;
+        
+        if (nestedRefs.length > 0) {
+          // Recursively render nested snippets
+          const nestedResult = await renderTemplate(
+            snippet.content,
+            maxDepth,
+            currentDepth + 1
+          );
+          snippetContent = nestedResult.rendered;
+          usedSnippets.push(...nestedResult.usedSnippets);
+          errors.push(...nestedResult.errors);
+        }
+        
+        // Replace all occurrences of this snippet
+        const regex = new RegExp(`\\{\\{\\s*${escapeRegExp(snippetName)}\\s*\\}\\}`, 'g');
+        rendered = rendered.replace(regex, snippetContent);
+        usedSnippets.push(snippetName);
+      } else {
+        errors.push(`Snippet not found: ${snippetName}`);
+      }
+    } catch (error) {
+      errors.push(`Error loading snippet ${snippetName}: ${error}`);
+    }
+  }
+
+  return {
+    rendered,
+    usedSnippets: [...new Set(usedSnippets)], // Remove duplicates
+    errors
+  };
+}
+
+/**
+ * Validate a template for syntax errors
+ */
+export function validateTemplate(template: string): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  
+  // Check for unclosed brackets
+  const openCount = (template.match(/\{\{/g) || []).length;
+  const closeCount = (template.match(/\}\}/g) || []).length;
+  
+  if (openCount !== closeCount) {
+    errors.push('Mismatched brackets: ensure all {{ are closed with }}');
+  }
+  
+  // Check for empty references
+  const emptyRefs = template.match(/\{\{\s*\}\}/g);
+  if (emptyRefs) {
+    errors.push('Empty snippet references found');
+  }
+  
+  // Check for nested brackets (not supported)
+  const nestedPattern = /\{\{[^}]*\{\{/;
+  if (nestedPattern.test(template)) {
+    errors.push('Nested brackets are not supported');
+  }
+  
+  return {
+    valid: errors.length === 0,
+    errors
+  };
+}
+
+/**
+ * Escape special regex characters
+ */
+function escapeRegExp(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Get a preview of the template with snippets partially expanded
+ * Useful for showing a preview without loading all snippets
+ */
+export function getTemplatePreview(template: string, snippets: Snippet[]): string {
+  let preview = template;
+  
+  snippets.forEach(snippet => {
+    const regex = new RegExp(`\\{\\{\\s*${escapeRegExp(snippet.name)}\\s*\\}\\}`, 'g');
+    const truncatedContent = snippet.content.length > 50 
+      ? snippet.content.substring(0, 50) + '...'
+      : snippet.content;
+    preview = preview.replace(regex, `[${truncatedContent}]`);
+  });
+  
+  return preview;
+}
+
+/**
+ * Create a dependency graph of snippets
+ */
+export async function getSnippetDependencies(
+  snippetName: string,
+  visited: Set<string> = new Set()
+): Promise<{ dependencies: string[]; errors: string[] }> {
+  if (visited.has(snippetName)) {
+    return { dependencies: [], errors: [`Circular dependency detected: ${snippetName}`] };
+  }
+  
+  visited.add(snippetName);
+  const dependencies: string[] = [];
+  const errors: string[] = [];
+  
+  try {
+    const snippet = await getSnippet(snippetName);
+    
+    if (snippet) {
+      const refs = extractSnippetReferences(snippet.content);
+      
+      for (const ref of refs) {
+        dependencies.push(ref);
+        const nested = await getSnippetDependencies(ref, new Set(visited));
+        dependencies.push(...nested.dependencies);
+        errors.push(...nested.errors);
+      }
+    } else {
+      errors.push(`Snippet not found: ${snippetName}`);
+    }
+  } catch (error) {
+    errors.push(`Error loading snippet ${snippetName}: ${error}`);
+  }
+  
+  return {
+    dependencies: [...new Set(dependencies)],
+    errors
+  };
+}
+</file>
+
+<file path="lib/supabase.ts">
+import { createClient } from '@supabase/supabase-js';
+import type { Snippet, GenerationSession, ComposedPrompt } from './types';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// Snippet operations
+export async function getSnippets(search?: string) {
+  let query = supabase
+    .from('snippets')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (search) {
+    query = query.ilike('name', `%${search}%`);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data as Snippet[];
+}
+
+export async function getSnippet(name: string) {
+  const { data, error } = await supabase
+    .from('snippets')
+    .select('*')
+    .eq('name', name)
+    .single();
+  
+  if (error) throw error;
+  return data as Snippet;
+}
+
+export async function createSnippet(snippet: Omit<Snippet, 'id' | 'created_at' | 'updated_at'>) {
+  const { data, error } = await supabase
+    .from('snippets')
+    .insert(snippet)
+    .select()
+    .single();
+  
+  if (error) throw error;
+  return data as Snippet;
+}
+
+export async function updateSnippet(name: string, updates: Partial<Snippet>) {
+  const { data, error } = await supabase
+    .from('snippets')
+    .update(updates)
+    .eq('name', name)
+    .select()
+    .single();
+  
+  if (error) throw error;
+  return data as Snippet;
+}
+
+export async function deleteSnippet(name: string) {
+  const { error } = await supabase
+    .from('snippets')
+    .delete()
+    .eq('name', name);
+  
+  if (error) throw error;
+}
+
+// Generation session operations
+export async function createGenerationSession(session: Omit<GenerationSession, 'id' | 'created_at' | 'updated_at'>) {
+  const { data, error } = await supabase
+    .from('generation_sessions')
+    .insert(session)
+    .select()
+    .single();
+  
+  if (error) throw error;
+  return data as GenerationSession;
+}
+
+export async function updateGenerationSession(id: string, updates: Partial<GenerationSession>) {
+  const { data, error } = await supabase
+    .from('generation_sessions')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single();
+  
+  if (error) throw error;
+  return data as GenerationSession;
+}
+
+export async function getGenerationSession(id: string) {
+  const { data, error } = await supabase
+    .from('generation_sessions')
+    .select('*')
+    .eq('id', id)
+    .single();
+  
+  if (error) throw error;
+  return data as GenerationSession;
+}
+
+// Composed prompt operations
+export async function getComposedPrompts() {
+  const { data, error } = await supabase
+    .from('composed_prompts')
+    .select('*')
+    .order('created_at', { ascending: false });
+  
+  if (error) throw error;
+  return data as ComposedPrompt[];
+}
+
+export async function getComposedPrompt(id: string) {
+  const { data, error } = await supabase
+    .from('composed_prompts')
+    .select('*')
+    .eq('id', id)
+    .single();
+  
+  if (error) throw error;
+  return data as ComposedPrompt;
+}
+
+export async function createComposedPrompt(prompt: Omit<ComposedPrompt, 'id' | 'created_at' | 'updated_at'>) {
+  const { data, error } = await supabase
+    .from('composed_prompts')
+    .insert(prompt)
+    .select()
+    .single();
+  
+  if (error) throw error;
+  return data as ComposedPrompt;
+}
+
+export async function updateComposedPrompt(id: string, updates: Partial<ComposedPrompt>) {
+  const { data, error } = await supabase
+    .from('composed_prompts')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single();
+  
+  if (error) throw error;
+  return data as ComposedPrompt;
+}
+
+export async function deleteComposedPrompt(id: string) {
+  const { error } = await supabase
+    .from('composed_prompts')
+    .delete()
+    .eq('id', id);
+  
+  if (error) throw error;
+}
+</file>
+
+<file path="lib/types.ts">
+export interface Snippet {
+  id: string;
+  name: string;
+  content: string;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GenerationSession {
+  id: string;
+  snippet_name: string;
+  user_context: string;
+  similar_snippets: string[];
+  llm_responses?: {
+    claude?: string;
+    gpt?: string;
+    grok?: string;
+  };
+  final_combined?: string;
+  status: 'in_progress' | 'completed' | 'cancelled';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ComposedPrompt {
+  id: string;
+  name: string;
+  template: string;
+  rendered_content?: string;
+  used_snippets: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LLMModel {
+  id: string;
+  name: string;
+  provider: string;
+}
+
+export const SUPPORTED_MODELS: LLMModel[] = [
+  { id: "anthropic/claude-4-opus", name: "Claude 4 Opus", provider: "anthropic" },
+  { id: "openai/o3", name: "OpenAI o3", provider: "openai" },
+  { id: "x-ai/grok-4", name: "Grok 4", provider: "x-ai" },
+  { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "google" },
+  { id: "anthropic/claude-4-opus", name: "Claude 4 Opus (Combiner)", provider: "anthropic" }
+];
+</file>
+
+<file path="next.config.js">
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  experimental: {
+    serverActions: true,
+  },
+}
+
+module.exports = nextConfig
+</file>
+
+<file path="package.json">
+{
+  "name": "prompt-builder",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "next": "14.0.4",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "clsx": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/react": "^18.2.45",
+    "@types/react-dom": "^18.2.18",
+    "typescript": "^5.3.3",
+    "tailwindcss": "^3.3.0",
+    "postcss": "^8.4.31",
+    "autoprefixer": "^10.4.16",
+    "eslint": "^8.55.0",
+    "eslint-config-next": "14.0.4"
+  }
+}
+</file>
+
+<file path="postcss.config.js">
+module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}
+</file>
+
+<file path="supabase.sql">
+-- Snippets table - core storage for all prompt snippets
+CREATE TABLE snippets (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE, -- e.g., "geo_asia_japan", "investment_SeriesB"
+    content TEXT NOT NULL, -- the actual prompt snippet content
+    description TEXT, -- user-provided context when creating the snippet
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Generation sessions table - tracks the LLM generation process
+CREATE TABLE generation_sessions (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    snippet_name TEXT NOT NULL, -- the snippet being generated
+    user_context TEXT NOT NULL, -- context provided by user
+    similar_snippets TEXT[], -- array of similar snippet names used as reference
+    llm_responses JSONB, -- stores responses from each LLM {"claude": "...", "gpt": "...", "grok": "..."}
+    final_combined TEXT, -- the final combined version from the 4th LLM
+    status TEXT DEFAULT 'in_progress', -- 'in_progress', 'completed', 'cancelled'
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Composed prompts table - for storing full prompts that use multiple snippets
+CREATE TABLE composed_prompts (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    name TEXT NOT NULL,
+    template TEXT NOT NULL, -- e.g., "You are looking at a {{investment_SeriesB}} Investment in {{geo_asia_japan}}"
+    rendered_content TEXT, -- the template with all snippets expanded
+    used_snippets TEXT[], -- array of snippet names used in this prompt
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for performance
+CREATE INDEX idx_snippets_name ON snippets(name);
+CREATE INDEX idx_snippets_created_at ON snippets(created_at DESC);
+CREATE INDEX idx_generation_sessions_status ON generation_sessions(status);
+CREATE INDEX idx_composed_prompts_name ON composed_prompts(name);
+
+-- Function to update the updated_at timestamp
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Triggers to automatically update updated_at
+CREATE TRIGGER update_snippets_updated_at 
+    BEFORE UPDATE ON snippets 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_generation_sessions_updated_at 
+    BEFORE UPDATE ON generation_sessions 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_composed_prompts_updated_at 
+    BEFORE UPDATE ON composed_prompts 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Enable Row Level Security (good practice even for simple apps)
+ALTER TABLE snippets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE generation_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE composed_prompts ENABLE ROW LEVEL SECURITY;
+
+-- Simple policies (since no auth, allow all operations)
+CREATE POLICY "Allow all operations on snippets" ON snippets FOR ALL USING (true);
+CREATE POLICY "Allow all operations on generation_sessions" ON generation_sessions FOR ALL USING (true);
+CREATE POLICY "Allow all operations on composed_prompts" ON composed_prompts FOR ALL USING (true);
+</file>
+
+<file path="tailwind.config.js">
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: [
+    './pages/**/*.{js,ts,jsx,tsx,mdx}',
+    './components/**/*.{js,ts,jsx,tsx,mdx}',
+    './app/**/*.{js,ts,jsx,tsx,mdx}',
+  ],
+  theme: {
+    extend: {
+      colors: {
+        'primary': '#0070f3',
+        'secondary': '#0051cc',
+      },
+    },
+  },
+  plugins: [],
+}
+</file>
+
+<file path="tsconfig.json">
+{
+  "compilerOptions": {
+    "target": "es5",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}
+</file>
+
+</files>
