@@ -20,6 +20,7 @@ interface GenerationRequest {
   context: string;
   snippetName: string;
   similarSnippets: Snippet[];
+  rubricContent?: string;
 }
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
@@ -28,7 +29,7 @@ const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
  * Generate a prompt for creating a new snippet
  */
 function createGenerationPrompt(request: GenerationRequest): string {
-  const { context, snippetName, similarSnippets } = request;
+  const { context, snippetName, similarSnippets, rubricContent } = request;
   
   let prompt = `You are creating a prompt snippet called "${snippetName}".
 
@@ -36,6 +37,13 @@ User Context/Requirements:
 ${context}
 
 `;
+
+  if (rubricContent) {
+    prompt += `Evaluation Rubric/Guidelines:
+${rubricContent}
+
+`;
+  }
 
   if (similarSnippets.length > 0) {
     prompt += `Here are some similar snippets for reference:\n\n`;
@@ -49,13 +57,15 @@ ${context}
     });
   }
 
-  prompt += `Based on the context and similar snippets (if provided), create a high-quality prompt snippet for "${snippetName}". 
+  prompt += `Based on the context${rubricContent ? ', evaluation rubric,' : ''} and similar snippets (if provided), create a high-quality prompt snippet for "${snippetName}". 
 
 The snippet should:
 1. Be clear, specific, and reusable
 2. Follow a similar structure to the reference snippets if applicable
 3. Be self-contained but work well when composed with other snippets
 4. Avoid redundancy with existing snippets
+${rubricContent ? `5. Align with the evaluation criteria and guidelines provided in the rubric
+6. Address all key points and requirements mentioned in the rubric` : ''}
 
 Provide only the snippet content, without any additional explanation.`;
 
@@ -118,13 +128,23 @@ export async function generateWithLLM(
 function createCombinerPrompt(
   snippetName: string,
   context: string,
-  responses: Record<string, string>
+  responses: Record<string, string>,
+  rubricContent?: string
 ): string {
   let prompt = `You are combining multiple AI-generated versions of a prompt snippet called "${snippetName}".
 
 Original Context: ${context}
 
-Here are the different versions:
+`;
+
+  if (rubricContent) {
+    prompt += `Evaluation Rubric/Guidelines:
+${rubricContent}
+
+`;
+  }
+
+  prompt += `Here are the different versions:
 
 `;
 
@@ -137,6 +157,8 @@ Here are the different versions:
 2. Maintains consistency and clarity
 3. Removes any redundancy
 4. Ensures the snippet is self-contained and reusable
+${rubricContent ? '5. Strictly adheres to all evaluation criteria and guidelines in the rubric
+6. Prioritizes rubric requirements when there are conflicts between versions' : ''}
 
 Provide only the final snippet content, without any additional explanation.`;
 
@@ -179,7 +201,8 @@ export async function generateSnippetWithMultipleLLMs(
   const combinerPrompt = createCombinerPrompt(
     request.snippetName,
     request.context,
-    responses
+    responses,
+    request.rubricContent
   );
 
   let finalContent: string;

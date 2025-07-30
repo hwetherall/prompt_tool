@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/Card';
 import { GenerationProgress } from '@/components/GenerationProgress';
 import { SnippetCard } from '@/components/SnippetCard';
 import { NextStepSelector } from '@/components/NextStepSelector';
+import { FileUpload } from '@/components/FileUpload';
 import type { Snippet } from '@/lib/types';
 import { parseHierarchy } from '@/lib/similarity';
 import type { SimilarityScore } from '@/lib/similarity';
@@ -32,6 +33,7 @@ export default function NewSnippetPage() {
   const [loadingFeedback, setLoadingFeedback] = useState(false);
   const [showNextSteps, setShowNextSteps] = useState(false);
   const [savedSnippetName, setSavedSnippetName] = useState('');
+  const [rubricFile, setRubricFile] = useState<File | null>(null);
 
   // Handle URL prefill parameters
   useEffect(() => {
@@ -123,14 +125,19 @@ export default function NewSnippetPage() {
         setProgress(prev => Math.min(prev + 10, 90));
       }, 1000);
 
+      // Create FormData for file upload
+      const formData = new FormData();
+      formData.append('snippetName', name);
+      formData.append('context', context);
+      formData.append('similarSnippets', JSON.stringify(selectedSnippetObjects));
+      
+      if (rubricFile) {
+        formData.append('rubric', rubricFile);
+      }
+
       const response = await fetch('/api/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          snippetName: name,
-          context,
-          similarSnippets: selectedSnippetObjects
-        })
+        body: formData
       });
 
       clearInterval(progressInterval);
@@ -197,6 +204,7 @@ export default function NewSnippetPage() {
     setFeedback(null);
     setSimilarSnippets([]);
     setSelectedSnippets(new Set());
+    setRubricFile(null);
   };
 
   const handleGetFeedback = async () => {
@@ -271,6 +279,14 @@ export default function NewSnippetPage() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 fullWidth
+              />
+
+              <FileUpload
+                label="Upload Rubric (optional)"
+                helpText="Upload a Word document (.doc, .docx) containing evaluation criteria or guidelines"
+                selectedFile={rubricFile}
+                onFileSelect={setRubricFile}
+                onFileRemove={() => setRubricFile(null)}
               />
             </div>
           </Card>

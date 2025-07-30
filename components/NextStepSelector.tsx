@@ -111,7 +111,7 @@ export const NextStepSelector: React.FC<NextStepSelectorProps> = ({
                   </p>
                   <Button 
                     onClick={handleCreateFromScratch}
-                    variant="outline"
+                    variant="secondary"
                     fullWidth
                   >
                     New Snippet
@@ -132,7 +132,7 @@ export const NextStepSelector: React.FC<NextStepSelectorProps> = ({
                     <div className="space-y-2">
                       <Button 
                         onClick={() => handleFillTaxonomyGap()}
-                        variant="outline"
+                        variant="secondary"
                         fullWidth
                         size="sm"
                       >
@@ -142,7 +142,7 @@ export const NextStepSelector: React.FC<NextStepSelectorProps> = ({
                         <Button
                           key={index}
                           onClick={() => handleFillTaxonomyGap(item)}
-                          variant="outline"
+                          variant="secondary"
                           fullWidth
                           size="sm"
                           className="text-xs"
@@ -154,7 +154,7 @@ export const NextStepSelector: React.FC<NextStepSelectorProps> = ({
                   ) : (
                     <Button 
                       onClick={() => handleFillTaxonomyGap()}
-                      variant="outline"
+                      variant="secondary"
                       fullWidth
                     >
                       Browse Gaps
@@ -198,7 +198,7 @@ export const NextStepSelector: React.FC<NextStepSelectorProps> = ({
                               <Button
                                 key={index}
                                 onClick={() => handleFillTaxonomyGap(alt)}
-                                variant="outline"
+                                variant="secondary"
                                 size="sm"
                                 fullWidth
                                 className="text-xs"
