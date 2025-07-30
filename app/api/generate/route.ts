@@ -9,7 +9,8 @@ export async function POST(request: NextRequest) {
     let snippetName: string;
     let context: string;
     let similarSnippets: Snippet[] = [];
-    let rubricContent: string | null = null;
+    let rubricContent: string | undefined = undefined;
+    let clientId: string | undefined = undefined;
 
     // Check if the request is multipart/form-data
     const contentType = request.headers.get('content-type') || '';
@@ -30,6 +31,12 @@ export async function POST(request: NextRequest) {
         }
       }
       
+      // Handle client ID
+      const clientIdValue = formData.get('clientId') as string;
+      if (clientIdValue) {
+        clientId = clientIdValue;
+      }
+      
       // Handle rubric file if present
       const rubricFile = formData.get('rubric') as File;
       if (rubricFile) {
@@ -43,6 +50,7 @@ export async function POST(request: NextRequest) {
       snippetName = body.snippetName;
       context = body.context;
       similarSnippets = body.similarSnippets || [];
+      clientId = body.clientId;
     }
     
     if (!snippetName || !context) {
@@ -57,8 +65,9 @@ export async function POST(request: NextRequest) {
       snippet_name: snippetName,
       user_context: context,
       similar_snippets: similarSnippets.map((s: Snippet) => s.name),
+      client_id: clientId,
       status: 'in_progress'
-    });
+    } as any);
     
     // Enhance context with rubric if provided
     let enhancedContext = context;

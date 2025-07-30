@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSnippets } from '@/lib/supabase';
+import { getSnippets, getSnippetsWithClientPriority } from '@/lib/supabase';
 import { findSimilarSnippets } from '@/lib/similarity';
 
 export async function GET(request: NextRequest) {
@@ -7,6 +7,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const name = searchParams.get('name');
     const limit = searchParams.get('limit');
+    const clientId = searchParams.get('client_id');
     
     if (!name) {
       return NextResponse.json(
@@ -15,7 +16,10 @@ export async function GET(request: NextRequest) {
       );
     }
     
-    const allSnippets = await getSnippets();
+    // Use client-aware snippet fetching if client_id is provided
+    const allSnippets = clientId 
+      ? await getSnippetsWithClientPriority(undefined, clientId)
+      : await getSnippets();
     const similarSnippets = findSimilarSnippets(
       name,
       allSnippets,

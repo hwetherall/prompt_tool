@@ -133,7 +133,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
             <div>
               <Button
                 onClick={triggerFileInput}
-                variant="outline"
+                variant="secondary"
                 size="sm"
               >
                 Choose File

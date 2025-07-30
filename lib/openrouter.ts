@@ -157,8 +157,8 @@ ${rubricContent}
 2. Maintains consistency and clarity
 3. Removes any redundancy
 4. Ensures the snippet is self-contained and reusable
-${rubricContent ? '5. Strictly adheres to all evaluation criteria and guidelines in the rubric
-6. Prioritizes rubric requirements when there are conflicts between versions' : ''}
+${rubricContent ? `5. Strictly adheres to all evaluation criteria and guidelines in the rubric
+6. Prioritizes rubric requirements when there are conflicts between versions` : ''}
 
 Provide only the final snippet content, without any additional explanation.`;
 

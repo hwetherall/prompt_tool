@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, content, description } = body;
+    const { name, content, description, client_id, is_general } = body;
     
     if (!name || !content) {
       return NextResponse.json(
@@ -40,8 +40,10 @@ export async function POST(request: NextRequest) {
     const snippet = await createSnippet({
       name,
       content,
-      description
-    });
+      description,
+      client_id: client_id || null,
+      is_general: is_general !== undefined ? is_general : !client_id
+    } as any);
     
     return NextResponse.json({ snippet }, { status: 201 });
   } catch (error: any) {
