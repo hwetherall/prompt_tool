@@ -1,19 +1,21 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { GenerationProgress } from '@/components/GenerationProgress';
 import { SnippetCard } from '@/components/SnippetCard';
+import { NextStepSelector } from '@/components/NextStepSelector';
 import type { Snippet } from '@/lib/types';
 import { parseHierarchy } from '@/lib/similarity';
 import type { SimilarityScore } from '@/lib/similarity';
 
 export default function NewSnippetPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [name, setName] = useState('');
   const [context, setContext] = useState('');
   const [description, setDescription] = useState('');
@@ -26,6 +28,24 @@ export default function NewSnippetPage() {
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState('');
   const [llmResponses, setLlmResponses] = useState<Record<string, string>>({});
+  const [feedback, setFeedback] = useState<{likes: string[], improvements: string[]} | null>(null);
+  const [loadingFeedback, setLoadingFeedback] = useState(false);
+  const [showNextSteps, setShowNextSteps] = useState(false);
+  const [savedSnippetName, setSavedSnippetName] = useState('');
+
+  // Handle URL prefill parameters
+  useEffect(() => {
+    const prefillName = searchParams.get('prefill');
+    const isAiRecommended = searchParams.get('ai_recommended') === 'true';
+    
+    if (prefillName) {
+      setName(prefillName);
+      
+      // Generate context suggestion based on snippet name
+      const contextSuggestion = generateContextSuggestion(prefillName, isAiRecommended);
+      setContext(contextSuggestion);
+    }
+  }, [searchParams]);
 
   // Fetch similar snippets when name changes
   useEffect(() => {
@@ -49,6 +69,35 @@ export default function NewSnippetPage() {
       setSelectedSnippets(new Set(topSnippets.map((s: SimilarityScore) => s.snippet.name)));
     } catch (err) {
       console.error('Error fetching similar snippets:', err);
+    }
+  };
+
+  const generateContextSuggestion = (snippetName: string, isAiRecommended: boolean): string => {
+    const parts = snippetName.split('_');
+    
+    if (isAiRecommended) {
+      return `AI recommended this snippet to balance your library coverage. Create a comprehensive prompt snippet for ${snippetName} that complements your existing snippets and fills an important gap in your taxonomy.`;
+    }
+    
+    // Generate context based on naming pattern
+    if (parts[0] === 'geo') {
+      const region = parts[1] || 'region';
+      const country = parts[2] || 'location';
+      return `Create a geographic context snippet for ${country} in the ${region} region. Include cultural considerations, market dynamics, business practices, and key characteristics relevant for this location.`;
+    } else if (parts[0] === 'industry') {
+      const sector = parts[1] || 'sector';
+      const subsector = parts[2] || 'area';
+      return `Create an industry-specific snippet for ${subsector} within the ${sector} sector. Include market trends, key players, regulatory considerations, and business model characteristics.`;
+    } else if (parts[0] === 'stage') {
+      const phase = parts[1] || 'phase';
+      const specific = parts[2] || 'stage';
+      return `Create a funding stage snippet for ${specific} in the ${phase} phase. Include typical valuation ranges, investor types, due diligence focus areas, and milestone expectations.`;
+    } else if (parts[0] === 'core') {
+      const type = parts[1] || 'element';
+      const aspect = parts[2] || 'component';
+      return `Create a core structural snippet for ${aspect} ${type}. This should be a foundational element that can be reused across different prompt compositions.`;
+    } else {
+      return `Create a prompt snippet for ${snippetName}. Define the context, requirements, and structure for this specific use case.`;
     }
   };
 
@@ -128,11 +177,57 @@ export default function NewSnippetPage() {
         throw new Error(data.error || 'Failed to save snippet');
       }
 
-      router.push(`/snippets/${encodeURIComponent(name)}`);
+      // Show next steps instead of redirecting
+      setSavedSnippetName(name);
+      setShowNextSteps(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save snippet');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCloseNextSteps = () => {
+    setShowNextSteps(false);
+    // Reset form for new snippet
+    setName('');
+    setContext('');
+    setDescription('');
+    setGeneratedContent('');
+    setFeedback(null);
+    setSimilarSnippets([]);
+    setSelectedSnippets(new Set());
+  };
+
+  const handleGetFeedback = async () => {
+    if (!generatedContent) {
+      setError('No content to analyze');
+      return;
+    }
+
+    setLoadingFeedback(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          promptContent: generatedContent
+        })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to get feedback');
+      }
+
+      const data = await response.json();
+      setFeedback(data.feedback);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to get feedback');
+    } finally {
+      setLoadingFeedback(false);
     }
   };
 
@@ -266,7 +361,7 @@ export default function NewSnippetPage() {
               <Textarea
                 value={generatedContent}
                 onChange={(e) => setGeneratedContent(e.target.value)}
-                rows={15}
+                rows={25}
                 fullWidth
                 className="font-mono text-sm"
               />
@@ -286,6 +381,44 @@ export default function NewSnippetPage() {
                 >
                   Regenerate
                 </Button>
+                <Button
+                  variant="secondary"
+                  onClick={handleGetFeedback}
+                  disabled={loadingFeedback}
+                  isLoading={loadingFeedback}
+                >
+                  Get Gemini Feedback
+                </Button>
+              </div>
+            </Card>
+          )}
+
+          {feedback && (
+            <Card>
+              <h2 className="mb-4">🤖 Gemini 2.5 Pro Feedback</h2>
+              
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold mb-3 text-green-700">👍 What Gemini Likes</h3>
+                  <div className="space-y-2">
+                    {feedback.likes.map((like, index) => (
+                      <div key={index} className="bg-green-50 border border-green-200 rounded-md p-3">
+                        <p className="text-green-800">{like}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                <div>
+                  <h3 className="text-lg font-semibold mb-3 text-blue-700">💡 Suggested Improvements</h3>
+                  <div className="space-y-2">
+                    {feedback.improvements.map((improvement, index) => (
+                      <div key={index} className="bg-blue-50 border border-blue-200 rounded-md p-3">
+                        <p className="text-blue-800">{improvement}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </Card>
           )}
@@ -297,6 +430,14 @@ export default function NewSnippetPage() {
           )}
         </div>
       </div>
+
+      {/* Next Step Selector Modal */}
+      {showNextSteps && (
+        <NextStepSelector
+          currentSnippet={savedSnippetName}
+          onClose={handleCloseNextSteps}
+        />
+      )}
     </div>
   );
 }

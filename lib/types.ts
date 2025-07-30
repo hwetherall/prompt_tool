@@ -44,5 +44,6 @@ export const SUPPORTED_MODELS: LLMModel[] = [
   { id: "openai/o3", name: "OpenAI o3", provider: "openai" },
   { id: "x-ai/grok-4", name: "Grok 4", provider: "x-ai" },
   { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "google" },
+  { id: "moonshotai/moonshot-v1-8k", name: "Kimi K2", provider: "moonshot" },
   { id: "anthropic/claude-4-opus", name: "Claude 4 Opus (Combiner)", provider: "anthropic" }
 ];

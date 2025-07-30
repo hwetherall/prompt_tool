@@ -100,7 +100,7 @@ export const SnippetEditor: React.FC<SnippetEditorProps> = ({
             label="Content"
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            rows={15}
+            rows={25}
             fullWidth
             className="font-mono text-sm"
           />
