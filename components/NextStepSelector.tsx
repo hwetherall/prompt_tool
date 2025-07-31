@@ -111,7 +111,7 @@ export const NextStepSelector: React.FC<NextStepSelectorProps> = ({
                   </p>
                   <Button 
                     onClick={handleCreateFromScratch}
-                    variant="outline"
+                    variant="secondary"
                     fullWidth
                   >
                     New Snippet
@@ -132,7 +132,7 @@ export const NextStepSelector: React.FC<NextStepSelectorProps> = ({
                     <div className="space-y-2">
                       <Button 
                         onClick={() => handleFillTaxonomyGap()}
-                        variant="outline"
+                        variant="secondary"
                         fullWidth
                         size="sm"
                       >
@@ -142,7 +142,7 @@ export const NextStepSelector: React.FC<NextStepSelectorProps> = ({
                         <Button
                           key={index}
                           onClick={() => handleFillTaxonomyGap(item)}
-                          variant="outline"
+                          variant="secondary"
                           fullWidth
                           size="sm"
                           className="text-xs"
@@ -154,7 +154,7 @@ export const NextStepSelector: React.FC<NextStepSelectorProps> = ({
                   ) : (
                     <Button 
                       onClick={() => handleFillTaxonomyGap()}
-                      variant="outline"
+                      variant="secondary"
                       fullWidth
                     >
                       Browse Gaps
@@ -183,7 +183,7 @@ export const NextStepSelector: React.FC<NextStepSelectorProps> = ({
                       <Button 
                         onClick={handleUseRecommendation}
                         fullWidth
-                        className="bg-purple-600 hover:bg-purple-700"
+                        variant="primary"
                       >
                         Use This Recommendation
                       </Button>
@@ -198,7 +198,7 @@ export const NextStepSelector: React.FC<NextStepSelectorProps> = ({
                               <Button
                                 key={index}
                                 onClick={() => handleFillTaxonomyGap(alt)}
-                                variant="outline"
+                                variant="secondary"
                                 size="sm"
                                 fullWidth
                                 className="text-xs"
@@ -217,7 +217,7 @@ export const NextStepSelector: React.FC<NextStepSelectorProps> = ({
                       </p>
                       <Button 
                         onClick={fetchRecommendation}
-                        variant="outline"
+                        variant="secondary"
                         fullWidth
                         size="sm"
                       >
@@ -233,7 +233,7 @@ export const NextStepSelector: React.FC<NextStepSelectorProps> = ({
             <div className="mt-8 pt-6 border-t flex justify-between">
               <Button
                 onClick={handleViewSnippet}
-                variant="outline"
+                variant="secondary"
               >
                 View Created Snippet
               </Button>
