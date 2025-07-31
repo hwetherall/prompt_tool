@@ -1,8 +1,20 @@
+export interface Client {
+  id: string;
+  name: string;
+  description?: string;
+  focus_areas?: string[];
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Snippet {
   id: string;
   name: string;
   content: string;
   description?: string;
+  client_id?: string;
+  is_general?: boolean;
+  client_name?: string;
   created_at: string;
   updated_at: string;
 }
@@ -12,6 +24,7 @@ export interface GenerationSession {
   snippet_name: string;
   user_context: string;
   similar_snippets: string[];
+  client_id?: string;
   llm_responses?: {
     claude?: string;
     gpt?: string;
@@ -29,6 +42,7 @@ export interface ComposedPrompt {
   template: string;
   rendered_content?: string;
   used_snippets: string[];
+  client_id?: string;
   created_at: string;
   updated_at: string;
 }

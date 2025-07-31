@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import Link from 'next/link';
+import { ClientProvider } from '@/lib/client-context';
+import { ClientNavigationHeader } from '@/components/ClientNavigationHeader';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -18,14 +20,21 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <nav className="bg-white shadow-sm border-b">
-          <div className="container">
-            <div className="flex justify-between items-center h-16">
-              <div className="flex items-center space-x-8">
-                <Link href="/" className="text-xl font-bold text-primary">
-                  Prompt Builder
-                </Link>
+        <ClientProvider>
+          <nav className="bg-white shadow-sm border-b">
+            <div className="container">
+              <div className="flex justify-between items-center h-16">
+                <div className="flex items-center space-x-8">
+                  <Link href="/" className="text-xl font-bold text-primary">
+                    Prompt Builder
+                  </Link>
                 <div className="flex items-center space-x-6">
+                  <Link
+                    href="/clients"
+                    className="text-gray-700 hover:text-primary transition-colors"
+                  >
+                    Clients
+                  </Link>
                   <Link
                     href="/snippets"
                     className="text-gray-700 hover:text-primary transition-colors"
@@ -56,8 +65,9 @@ export default function RootLayout({
               </div>
             </div>
           </div>
-        </nav>
-        <main className="min-h-screen">
+                  </nav>
+          <ClientNavigationHeader />
+          <main className="min-h-screen">
           {children}
         </main>
         <footer className="bg-gray-100 border-t mt-auto">
@@ -67,6 +77,7 @@ export default function RootLayout({
             </p>
           </div>
         </footer>
+        </ClientProvider>
       </body>
     </html>
   );

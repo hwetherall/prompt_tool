@@ -6,8 +6,10 @@ import { SnippetCard } from '@/components/SnippetCard';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { groupByTopLevel } from '@/lib/similarity';
 import type { Snippet } from '@/lib/types';
+import { useClient } from '@/lib/client-context';
 
 export default function SnippetsPage() {
+  const { currentClient, isGeneralMode } = useClient();
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [filteredSnippets, setFilteredSnippets] = useState<Snippet[]>([]);
   const [loading, setLoading] = useState(true);
@@ -16,7 +18,7 @@ export default function SnippetsPage() {
 
   useEffect(() => {
     fetchSnippets();
-  }, []);
+  }, [currentClient]);
 
   useEffect(() => {
     if (searchQuery) {
@@ -37,8 +39,21 @@ export default function SnippetsPage() {
       if (!response.ok) throw new Error('Failed to fetch snippets');
       
       const data = await response.json();
-      setSnippets(data.snippets);
-      setFilteredSnippets(data.snippets);
+      
+      // Filter snippets based on client context
+      let relevantSnippets = data.snippets;
+      if (!isGeneralMode && currentClient) {
+        // Show client-specific snippets and general snippets
+        relevantSnippets = data.snippets.filter((s: Snippet) => 
+          s.client_id === currentClient.id || s.is_general === true
+        );
+      } else {
+        // Show only general snippets
+        relevantSnippets = data.snippets.filter((s: Snippet) => s.is_general === true);
+      }
+      
+      setSnippets(relevantSnippets);
+      setFilteredSnippets(relevantSnippets);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {

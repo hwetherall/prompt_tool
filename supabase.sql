@@ -72,3 +72,16 @@ ALTER TABLE composed_prompts ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all operations on snippets" ON snippets FOR ALL USING (true);
 CREATE POLICY "Allow all operations on generation_sessions" ON generation_sessions FOR ALL USING (true);
 CREATE POLICY "Allow all operations on composed_prompts" ON composed_prompts FOR ALL USING (true);
+
+-- New clients table
+clients (
+  id, name, description, focus_areas[], 
+  created_at, updated_at
+)
+
+-- Updated snippets table
+snippets (
+  ...existing fields,
+  client_id (FK),
+  is_general (boolean)
+)

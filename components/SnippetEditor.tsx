@@ -87,12 +87,21 @@ export const SnippetEditor: React.FC<SnippetEditorProps> = ({
     <div className="space-y-6">
       <Card>
         <div className="mb-6">
-          <h2 className="text-2xl font-bold">{snippet.name}</h2>
-          <p className="hierarchy-path mt-1">{hierarchyPath}</p>
-          <p className="text-sm text-gray-500 mt-2">
-            Created: {new Date(snippet.created_at).toLocaleDateString()} | 
-            Updated: {new Date(snippet.updated_at).toLocaleDateString()}
-          </p>
+          <div className="flex items-start justify-between">
+            <div>
+              <h2 className="text-2xl font-bold">{snippet.name}</h2>
+              <p className="hierarchy-path mt-1">{hierarchyPath}</p>
+              <p className="text-sm text-gray-500 mt-2">
+                Created: {new Date(snippet.created_at).toLocaleDateString()} | 
+                Updated: {new Date(snippet.updated_at).toLocaleDateString()}
+              </p>
+            </div>
+            {snippet.client_name && (
+              <div className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full">
+                <span className="font-medium">Client:</span> {snippet.client_name}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="space-y-4">

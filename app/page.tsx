@@ -64,6 +64,20 @@ export default function HomePage() {
             </p>
           </div>
         </Card>
+
+        <Card>
+          <div className="text-center">
+            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+              </svg>
+            </div>
+            <h3 className="mb-2">Client Folders</h3>
+            <p className="text-gray-600">
+              Organize snippets into General and Client-specific collections for better management
+            </p>
+          </div>
+        </Card>
       </div>
 
       <div className="mt-16 bg-gray-100 rounded-lg p-8">

@@ -9,13 +9,16 @@ import { Card } from '@/components/ui/Card';
 import { GenerationProgress } from '@/components/GenerationProgress';
 import { SnippetCard } from '@/components/SnippetCard';
 import { NextStepSelector } from '@/components/NextStepSelector';
+import { FileUpload } from '@/components/FileUpload';
 import type { Snippet } from '@/lib/types';
 import { parseHierarchy } from '@/lib/similarity';
 import type { SimilarityScore } from '@/lib/similarity';
+import { useClient } from '@/lib/client-context';
 
 export default function NewSnippetPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { currentClient, isGeneralMode } = useClient();
   const [name, setName] = useState('');
   const [context, setContext] = useState('');
   const [description, setDescription] = useState('');
@@ -32,6 +35,7 @@ export default function NewSnippetPage() {
   const [loadingFeedback, setLoadingFeedback] = useState(false);
   const [showNextSteps, setShowNextSteps] = useState(false);
   const [savedSnippetName, setSavedSnippetName] = useState('');
+  const [rubricFile, setRubricFile] = useState<File | null>(null);
 
   // Handle URL prefill parameters
   useEffect(() => {
@@ -58,7 +62,11 @@ export default function NewSnippetPage() {
 
   const fetchSimilarSnippets = async () => {
     try {
-      const response = await fetch(`/api/similarity?name=${encodeURIComponent(name)}`);
+      const params = new URLSearchParams({
+        name: name,
+        ...(currentClient && { client_id: currentClient.id })
+      });
+      const response = await fetch(`/api/similarity?${params.toString()}`);
       if (!response.ok) return;
       
       const data = await response.json();
@@ -123,14 +131,23 @@ export default function NewSnippetPage() {
         setProgress(prev => Math.min(prev + 10, 90));
       }, 1000);
 
+      // Create FormData for file upload
+      const formData = new FormData();
+      formData.append('snippetName', name);
+      formData.append('context', context);
+      formData.append('similarSnippets', JSON.stringify(selectedSnippetObjects));
+      
+      if (currentClient) {
+        formData.append('clientId', currentClient.id);
+      }
+      
+      if (rubricFile) {
+        formData.append('rubric', rubricFile);
+      }
+
       const response = await fetch('/api/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          snippetName: name,
-          context,
-          similarSnippets: selectedSnippetObjects
-        })
+        body: formData
       });
 
       clearInterval(progressInterval);
@@ -168,7 +185,9 @@ export default function NewSnippetPage() {
         body: JSON.stringify({
           name,
           content: generatedContent,
-          description: description || context
+          description: description || context,
+          client_id: currentClient?.id || null,
+          is_general: isGeneralMode
         })
       });
 
@@ -197,6 +216,7 @@ export default function NewSnippetPage() {
     setFeedback(null);
     setSimilarSnippets([]);
     setSelectedSnippets(new Set());
+    setRubricFile(null);
   };
 
   const handleGetFeedback = async () => {
@@ -235,7 +255,21 @@ export default function NewSnippetPage() {
 
   return (
     <div className="container py-12 max-w-6xl">
-      <h1 className="mb-8">Create New Snippet</h1>
+      <div className="mb-8">
+        <h1 className="mb-2">Create New Snippet</h1>
+        {!isGeneralMode && currentClient && (
+          <div className="bg-purple-50 border border-purple-200 rounded-lg px-4 py-2 inline-flex items-center gap-2">
+            <span className="text-purple-700 font-medium">Client:</span>
+            <span className="text-purple-900">{currentClient.name}</span>
+            {currentClient.focus_areas && currentClient.focus_areas.length > 0 && (
+              <span className="text-purple-600 text-sm">
+                ({currentClient.focus_areas.slice(0, 2).join(', ')}
+                {currentClient.focus_areas.length > 2 && `, +${currentClient.focus_areas.length - 2} more`})
+              </span>
+            )}
+          </div>
+        )}
+      </div>
 
       <div className="grid lg:grid-cols-2 gap-8">
         <div className="space-y-6">
@@ -271,6 +305,14 @@ export default function NewSnippetPage() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 fullWidth
+              />
+
+              <FileUpload
+                label="Upload Rubric (optional)"
+                helpText="Upload a Word document (.doc, .docx) containing evaluation criteria or guidelines"
+                selectedFile={rubricFile}
+                onFileSelect={setRubricFile}
+                onFileRemove={() => setRubricFile(null)}
               />
             </div>
           </Card>

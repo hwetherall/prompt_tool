@@ -20,8 +20,17 @@ export const SnippetCard: React.FC<SnippetCardProps> = ({ snippet, onClick }) =>
   const CardContent = (
     <>
       <div className="mb-2">
-        <h3 className="font-semibold text-lg">{snippet.name}</h3>
-        <p className="hierarchy-path">{hierarchyPath}</p>
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="font-semibold text-lg">{snippet.name}</h3>
+            <p className="hierarchy-path">{hierarchyPath}</p>
+          </div>
+          {snippet.client_name && (
+            <span className="ml-2 px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-full">
+              {snippet.client_name}
+            </span>
+          )}
+        </div>
       </div>
       
       {snippet.description && (

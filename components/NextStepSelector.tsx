@@ -215,12 +215,12 @@ export const NextStepSelector: React.FC<NextStepSelectorProps> = ({
                       <p className="text-sm text-gray-500">
                         {error || 'Unable to get AI recommendation'}
                       </p>
-                      <Button 
-                        onClick={fetchRecommendation}
-                        variant="secondary"
-                        fullWidth
-                        size="sm"
-                      >
+                                             <Button 
+                         onClick={fetchRecommendation}
+                         variant="secondary"
+                         fullWidth
+                         size="sm"
+                       >
                         Retry
                       </Button>
                     </div>
@@ -231,10 +231,10 @@ export const NextStepSelector: React.FC<NextStepSelectorProps> = ({
 
             {/* Bottom Actions */}
             <div className="mt-8 pt-6 border-t flex justify-between">
-              <Button
-                onClick={handleViewSnippet}
-                variant="secondary"
-              >
+                             <Button
+                 onClick={handleViewSnippet}
+                 variant="secondary"
+               >
                 View Created Snippet
               </Button>
               
